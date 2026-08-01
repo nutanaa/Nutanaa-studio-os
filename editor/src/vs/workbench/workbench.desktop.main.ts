@@ -211,5 +211,7 @@ import './contrib/keybindings/electron-browser/systemWideKeybindings.contributio
 
 //#endregion
 
+// Nutanaa
+import './contrib/nutanaa/browser/nutanaa.contribution.js';
 
 export { main } from './electron-browser/desktop.main.js';
