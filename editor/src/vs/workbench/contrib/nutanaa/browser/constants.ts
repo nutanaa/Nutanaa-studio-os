@@ -15,6 +15,7 @@ export namespace NutanaaViewId {
 	export const MemoryExplorer = 'nutanaa.view.memoryExplorer';
 	export const TaskExplorer = 'nutanaa.view.taskExplorer';
 	export const ProjectKnowledge = 'nutanaa.view.projectKnowledge';
+	export const ProjectExplorer = 'nutanaa.view.projectExplorer';
 }
 
 export namespace NutanaaPanelId {
