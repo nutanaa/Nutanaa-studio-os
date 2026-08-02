@@ -9,7 +9,6 @@ import { Registry } from '../../../../platform/registry/common/platform.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { FileAccess } from '../../../../base/common/network.js';
 import { ViewPaneContainer } from '../../../browser/parts/views/viewPaneContainer.js';
 import {
 	Extensions as ViewContainerExtensions,
@@ -25,14 +24,6 @@ import { INutanaaRuntimeConnectionService, NUTANAA_VIEW_CONTAINER_ID } from '../
 import { NutanaaRuntimeConnectionService } from './nutanaaRuntimeConnectionService.js';
 import { NutanaaViews } from './nutanaaViews.js';
 import { nutanaaViewIcon } from './nutanaaIcons.js';
-
-// Dynamically inject nutanaa.css into the document head using FileAccess
-const cssUri = FileAccess.asBrowserUri('vs/workbench/contrib/nutanaa/browser/media/nutanaa.css').toString(true);
-const styleLink = document.createElement('link');
-styleLink.rel = 'stylesheet';
-styleLink.type = 'text/css';
-styleLink.href = cssUri;
-document.head.appendChild(styleLink);
 
 // Runtime connection service — the single seam between the editor UI and
 // the (not yet implemented) FastAPI/WebSocket bridge to the Python runtime
