@@ -7,7 +7,10 @@ entry point a CLI or test harness would use — and exposes it over
 HTTP + WebSocket. It does not simulate anything: `/health` reports the
 runtime's real `RuntimeHealth` flags, `/agents` reflects whatever is
 actually registered in `AgentManager` (empty until something registers
-one), and `/ws` forwards real events from the runtime's own `EventBus`.
+one), `/providers` reflects whatever is actually registered in
+`ProviderManager` (currently just Ollama, honestly reported as
+unhealthy if no local Ollama server is running), and `/ws` forwards
+real events from the runtime's own `EventBus`.
 
 Run locally from the repo root, so `runtime` and `backend` are both
 importable:
@@ -26,12 +29,15 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from runtime.agents.agent import CallableAgent
 from runtime.bootstrap import bootstrap
 from runtime.events.event_bus import Event
+from runtime.providers.ollama_provider import OllamaProvider
 from runtime.runtime_context import RuntimeContext
 
 logger = logging.getLogger(__name__)
@@ -53,16 +59,36 @@ def get_context() -> RuntimeContext:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-	"""Bootstrap and start the runtime once, when the API process starts,
-	and shut it down cleanly on exit.
+	"""Bootstrap the runtime, register the providers this API instance
+	wants available, then start it — and shut everything down cleanly on
+	exit.
 
-	This mirrors exactly how any other embedder of `runtime/` (a CLI, a
-	test harness) is expected to use `bootstrap()` plus the
-	`RuntimeLifecycle` facade it returns — the API layer isn't special,
-	it's just one more consumer of the same contract.
+	Registering providers here (rather than inside `bootstrap()` itself)
+	keeps `runtime/` provider-agnostic: a CLI or a test harness can
+	bootstrap the same runtime core and register a different set of
+	providers (or none at all, or the MockProvider) without touching
+	this file.
 	"""
 	global _context
 	_context = bootstrap()
+
+	_context.provider_manager.register("ollama", OllamaProvider())
+	_context.provider_manager.set_default("ollama")
+
+	async def _chat_execute(input_data: Any) -> str:
+		"""Backs the 'chat-assistant' agent: routes whatever it's given to
+		the default provider's chat() and returns the real text response.
+		No canned replies — if no provider is healthy, this raises, and
+		AgentManager.execute() surfaces that as a real failure rather
+		than a fake success."""
+		prompt = input_data if isinstance(input_data, str) else str(input_data)
+		assert _context is not None
+		response = await _context.provider_manager.chat(prompt)
+		return response.text
+
+	chat_agent = CallableAgent(name="chat-assistant", execute_hook=_chat_execute)
+	_context.agent_manager.register("chat-assistant", chat_agent)
+
 	assert _context.lifecycle is not None, "bootstrap() did not attach a lifecycle"
 	await _context.lifecycle.startup()
 	logger.info("Nutanaa runtime started; API ready.")
@@ -103,9 +129,10 @@ async def health() -> dict:
 
 @app.get("/agents")
 async def list_agents() -> list[dict]:
-	"""Real agent list from `AgentManager` — empty until something actually
-	registers an agent. No synthesized data, matching the editor's own
-	`getAgents()` contract in `common/nutanaa.ts`."""
+	"""Real agent list from `AgentManager` — includes the 'chat-assistant'
+	agent registered at startup, with its real, currently-tracked status.
+	No synthesized data, matching the editor's own `getAgents()` contract
+	in `common/nutanaa.ts`."""
 	context = get_context()
 	statuses = context.agent_manager.statuses()
 	return [
@@ -114,13 +141,47 @@ async def list_agents() -> list[dict]:
 	]
 
 
+@app.post("/agents/{name}/execute")
+async def execute_agent(name: str, payload: dict) -> dict:
+	"""Execute a registered agent with a plain input payload, e.g.
+	{"input": "hello"}. Returns the agent's real output, or a real error
+	if the agent doesn't exist or execution fails (e.g. no healthy
+	provider) — never a canned response."""
+	context = get_context()
+	try:
+		result = await context.agent_manager.execute(name, payload.get("input", ""))
+	except Exception as exc:  # noqa: BLE001 - surfaced to the caller, not swallowed
+		return {"success": False, "error": str(exc)}
+	return {"success": True, "output": result}
+
+
+@app.get("/providers")
+async def list_providers() -> list[dict]:
+	"""Real provider list from `ProviderManager`, including each
+	provider's actual, currently-measured health — not a static
+	"Disconnected"/"Not Configured" placeholder."""
+	context = get_context()
+	return [
+		{
+			"id": record.name,
+			"name": record.metadata.name,
+			"type": record.metadata.provider_type.value,
+			"healthy": record.health.healthy,
+			"status": record.health.status.value,
+			"message": record.health.message,
+			"models": list(record.metadata.models),
+			"activeModel": getattr(record.provider, "active_model", None),
+		}
+		for record in context.provider_manager.list_records()
+	]
+
+
 @app.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket) -> None:
 	"""Held-open connection that forwards every real runtime event — agent
 	lifecycle, workflow progress, provider health changes, whatever gets
 	published to the runtime's `EventBus` — to the connected client as it
-	happens. No heartbeat-only placeholder anymore; this is wired to real
-	events.
+	happens.
 	"""
 	await websocket.accept()
 	context = get_context()
@@ -139,8 +200,6 @@ async def ws_endpoint(websocket: WebSocket) -> None:
 	context.event_bus.subscribe("*", forward)
 	try:
 		while True:
-			# We don't expect inbound messages yet; reading keeps this
-			# coroutine responsive to a client-initiated close.
 			await websocket.receive_text()
 	except WebSocketDisconnect:
 		pass
