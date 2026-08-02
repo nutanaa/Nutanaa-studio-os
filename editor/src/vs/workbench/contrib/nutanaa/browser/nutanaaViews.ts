@@ -87,7 +87,7 @@ export class NutanaaViews extends Disposable {
 			name,
 			ctorDescriptor: new SyncDescriptor(TreeViewPane),
 			canToggleVisibility: true,
-			canMoveView: true,
+			canMoveView: false,
 			treeView,
 			collapsed: false,
 			order: 100
@@ -142,7 +142,7 @@ export class NutanaaViews extends Disposable {
 			name,
 			ctorDescriptor: new SyncDescriptor(TreeViewPane),
 			canToggleVisibility: true,
-			canMoveView: true,
+			canMoveView: false,
 			treeView,
 			collapsed: false,
 			order: 101
@@ -177,7 +177,7 @@ export class NutanaaViews extends Disposable {
 			name,
 			ctorDescriptor: new SyncDescriptor(TreeViewPane),
 			canToggleVisibility: true,
-			canMoveView: true,
+			canMoveView: false,
 			treeView,
 			collapsed: false,
 			order: 102
@@ -212,7 +212,7 @@ export class NutanaaViews extends Disposable {
 			name,
 			ctorDescriptor: new SyncDescriptor(TreeViewPane),
 			canToggleVisibility: true,
-			canMoveView: true,
+			canMoveView: false,
 			treeView,
 			collapsed: false,
 			order: 103
@@ -247,7 +247,7 @@ export class NutanaaViews extends Disposable {
 			name,
 			ctorDescriptor: new SyncDescriptor(TreeViewPane),
 			canToggleVisibility: true,
-			canMoveView: true,
+			canMoveView: false,
 			treeView,
 			collapsed: false,
 			order: 104
@@ -282,7 +282,7 @@ export class NutanaaViews extends Disposable {
 			name,
 			ctorDescriptor: new SyncDescriptor(TreeViewPane),
 			canToggleVisibility: true,
-			canMoveView: true,
+			canMoveView: false,
 			treeView,
 			collapsed: false,
 			order: 105
@@ -317,7 +317,7 @@ export class NutanaaViews extends Disposable {
 			name,
 			ctorDescriptor: new SyncDescriptor(TreeViewPane),
 			canToggleVisibility: true,
-			canMoveView: true,
+			canMoveView: false,
 			treeView,
 			collapsed: false,
 			order: 106
@@ -351,7 +351,7 @@ export class NutanaaViews extends Disposable {
 			name,
 			ctorDescriptor: new SyncDescriptor(TreeViewPane),
 			canToggleVisibility: true,
-			canMoveView: true,
+			canMoveView: false,
 			treeView,
 			collapsed: false,
 			order: 107
@@ -386,7 +386,7 @@ export class NutanaaViews extends Disposable {
 			name,
 			ctorDescriptor: new SyncDescriptor(TreeViewPane),
 			canToggleVisibility: true,
-			canMoveView: true,
+			canMoveView: false,
 			treeView,
 			collapsed: false,
 			order: 108
@@ -404,7 +404,7 @@ export class NutanaaViews extends Disposable {
 			name: localize2('nutanaa.dashboard.title', 'Dashboard'),
 			ctorDescriptor: new SyncDescriptor(NutanaaWelcomeView),
 			canToggleVisibility: true,
-			canMoveView: true,
+			canMoveView: false,
 			collapsed: false,
 			order: 1
 		};
@@ -436,7 +436,7 @@ export class NutanaaViews extends Disposable {
 			name,
 			ctorDescriptor: new SyncDescriptor(TreeViewPane),
 			canToggleVisibility: true,
-			canMoveView: true,
+			canMoveView: false,
 			treeView,
 			collapsed: false,
 			order: 106
