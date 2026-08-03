@@ -3,110 +3,88 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { localize } from '../../../../nls.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { ITreeItem, ITreeViewDataProvider, TreeItemCollapsibleState } from '../../../common/views.js';
+import {
+	INutanaaProviderSummary,
+	INutanaaRuntimeConnectionService,
+	NutanaaRuntimeConnectionState
+} from '../common/nutanaa.js';
 
+/**
+ * Populates the Provider Explorer tree from {@link INutanaaRuntimeConnectionService}.
+ *
+ * Previously this showed a hardcoded catalog of ~15 providers (OpenAI,
+ * Anthropic, Runway, ElevenLabs, etc.) that were never actually
+ * integrated — pure fiction. This now shows only providers genuinely
+ * registered with the runtime (`runtime/providers/provider_manager.py`),
+ * with their real, currently-measured health. When the runtime backend
+ * is not connected, it surfaces a single honest "not connected" item
+ * rather than fabricating a provider catalog.
+ */
 export class ProviderExplorerDataProvider extends Disposable implements ITreeViewDataProvider {
 
-	async getChildren(element?: ITreeItem): Promise<readonly ITreeItem[]> {
+	private static readonly DISCONNECTED_HANDLE = 'nutanaa.providerExplorer.disconnected';
 
+	constructor(
+		@INutanaaRuntimeConnectionService private readonly runtimeConnectionService: INutanaaRuntimeConnectionService,
+	) {
+		super();
+	}
+
+	async getChildren(element?: ITreeItem): Promise<readonly ITreeItem[] | undefined> {
+		// Only the root has children; providers themselves are leaves.
 		if (element) {
-
-			switch (element.handle) {
-
-				case 'provider-local':
-					return [
-						{
-							handle: 'ollama',
-							label: { label: 'Ollama' },
-							collapsibleState: TreeItemCollapsibleState.None
-						},
-						{
-							handle: 'lmstudio',
-							label: { label: 'LM Studio' },
-							collapsibleState: TreeItemCollapsibleState.None
-						}
-					];
-
-				case 'provider-cloud':
-					return [
-						{
-							handle: 'openai',
-							label: { label: 'OpenAI' },
-							collapsibleState: TreeItemCollapsibleState.None
-						},
-						{
-							handle: 'anthropic',
-							label: { label: 'Anthropic' },
-							collapsibleState: TreeItemCollapsibleState.None
-						},
-						{
-							handle: 'google',
-							label: { label: 'Google Gemini' },
-							collapsibleState: TreeItemCollapsibleState.None
-						},
-						{
-							handle: 'openrouter',
-							label: { label: 'OpenRouter' },
-							collapsibleState: TreeItemCollapsibleState.None
-						},
-						{
-							handle: 'groq',
-							label: { label: 'Groq' },
-							collapsibleState: TreeItemCollapsibleState.None
-						}
-					];
-
-				case 'provider-video':
-					return [
-						{ handle: 'veo', label: { label: 'Google Veo' }, collapsibleState: TreeItemCollapsibleState.None },
-						{ handle: 'runway', label: { label: 'Runway' }, collapsibleState: TreeItemCollapsibleState.None },
-						{ handle: 'kling', label: { label: 'Kling AI' }, collapsibleState: TreeItemCollapsibleState.None },
-						{ handle: 'pika', label: { label: 'Pika' }, collapsibleState: TreeItemCollapsibleState.None }
-					];
-
-				case 'provider-image':
-					return [
-						{ handle: 'flux', label: { label: 'FLUX' }, collapsibleState: TreeItemCollapsibleState.None },
-						{ handle: 'stable', label: { label: 'Stable Diffusion' }, collapsibleState: TreeItemCollapsibleState.None }
-					];
-
-				case 'provider-audio':
-					return [
-						{ handle: 'elevenlabs', label: { label: 'ElevenLabs' }, collapsibleState: TreeItemCollapsibleState.None },
-						{ handle: 'deepgram', label: { label: 'Deepgram' }, collapsibleState: TreeItemCollapsibleState.None }
-					];
-			}
-
-			return [];
+			return undefined;
 		}
 
-		return [
-			{
-				handle: 'provider-local',
-				label: { label: 'Local Providers' },
-				collapsibleState: TreeItemCollapsibleState.Collapsed
-			},
-			{
-				handle: 'provider-cloud',
-				label: { label: 'Cloud Providers' },
-				collapsibleState: TreeItemCollapsibleState.Collapsed
-			},
-			{
-				handle: 'provider-video',
-				label: { label: 'Video Generation' },
-				collapsibleState: TreeItemCollapsibleState.Collapsed
-			},
-			{
-				handle: 'provider-image',
-				label: { label: 'Image Generation' },
-				collapsibleState: TreeItemCollapsibleState.Collapsed
-			},
-			{
-				handle: 'provider-audio',
-				label: { label: 'Voice / Audio' },
-				collapsibleState: TreeItemCollapsibleState.Collapsed
-			}
-		];
+		if (this.runtimeConnectionService.state !== NutanaaRuntimeConnectionState.Connected) {
+			return [this.toDisconnectedItem()];
+		}
+
+		const providers = await this.runtimeConnectionService.getProviders();
+		if (providers.length === 0) {
+			return [this.toEmptyItem()];
+		}
+
+		return providers.map(provider => this.toProviderItem(provider));
+	}
+
+	private toDisconnectedItem(): ITreeItem {
+		const label = this.runtimeConnectionService.state === NutanaaRuntimeConnectionState.Connecting
+			? localize('nutanaa.providerExplorer.connecting', "Connecting to Nutanaa Runtime…")
+			: localize('nutanaa.providerExplorer.disconnected', "Not connected to Nutanaa Runtime");
+
+		return {
+			handle: ProviderExplorerDataProvider.DISCONNECTED_HANDLE,
+			label: { label },
+			collapsibleState: TreeItemCollapsibleState.None,
+			contextValue: 'nutanaaProviderExplorer.disconnected',
+		};
+	}
+
+	private toEmptyItem(): ITreeItem {
+		return {
+			handle: 'nutanaa.providerExplorer.empty',
+			label: { label: localize('nutanaa.providerExplorer.empty', "No providers are registered") },
+			collapsibleState: TreeItemCollapsibleState.None,
+			contextValue: 'nutanaaProviderExplorer.empty',
+		};
+	}
+
+	private toProviderItem(provider: INutanaaProviderSummary): ITreeItem {
+		const modelInfo = provider.activeModel
+			? `${provider.activeModel} · ${provider.status}`
+			: provider.status;
+
+		return {
+			handle: `nutanaa.providerExplorer.provider.${provider.id}`,
+			label: { label: provider.name },
+			description: modelInfo,
+			tooltip: provider.message,
+			collapsibleState: TreeItemCollapsibleState.None,
+			contextValue: provider.healthy ? 'nutanaaProviderExplorer.healthy' : 'nutanaaProviderExplorer.unhealthy',
+		};
 	}
 }

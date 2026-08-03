@@ -60,6 +60,22 @@ export interface INutanaaAgentSummary {
 	readonly status: string;
 }
 
+/**
+ * A single registered provider as reported by the Nutanaa Runtime
+ * backend's `/providers` endpoint (see `runtime/providers/provider_manager.py`
+ * and `backend/api/main.py`).
+ */
+export interface INutanaaProviderSummary {
+	readonly id: string;
+	readonly name: string;
+	readonly type: string;
+	readonly healthy: boolean;
+	readonly status: string;
+	readonly message: string;
+	readonly models: readonly string[];
+	readonly activeModel: string | undefined;
+}
+
 export const INutanaaRuntimeConnectionService = createDecorator<INutanaaRuntimeConnectionService>('nutanaaRuntimeConnectionService');
 
 /**
@@ -101,4 +117,11 @@ export interface INutanaaRuntimeConnectionService {
 	 * when {@link state} is not {@link NutanaaRuntimeConnectionState.Connected}.
 	 */
 	getAgents(): Promise<readonly INutanaaAgentSummary[]>;
+
+	/**
+	 * Returns the providers currently registered with the runtime, or an
+	 * empty array when {@link state} is not
+	 * {@link NutanaaRuntimeConnectionState.Connected}.
+	 */
+	getProviders(): Promise<readonly INutanaaProviderSummary[]>;
 }

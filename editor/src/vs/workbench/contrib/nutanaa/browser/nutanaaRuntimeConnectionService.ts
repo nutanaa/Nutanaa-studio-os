@@ -8,6 +8,7 @@ import { Emitter, Event } from '../../../../base/common/event.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import {
 	INutanaaAgentSummary,
+	INutanaaProviderSummary,
 	INutanaaRuntimeConnectionService,
 	NutanaaRuntimeConnectionState,
 	NUTANAA_RUNTIME_HTTP_URL,
@@ -26,14 +27,15 @@ interface INutanaaHealthResponse {
 /**
  * Default {@link INutanaaRuntimeConnectionService}.
  *
- * Phase 1: talks to the real Nutanaa Runtime backend (`runtime/main.py`) —
- * an HTTP health check followed by a WebSocket held open to detect
- * disconnects. It still reports no agents, since the Agent Engine isn't
- * wired to the runtime process yet (Phase 2); {@link getAgents} stays
- * honest about that rather than synthesizing data. Auto-reconnect is not
- * implemented here either — a dropped connection moves to
- * {@link NutanaaRuntimeConnectionState.Error} and stays there until
- * something calls {@link connect} again.
+ * Talks to the real Nutanaa Runtime backend (`backend/api/main.py`) — an
+ * HTTP health check followed by a WebSocket held open to detect
+ * disconnects, plus on-demand HTTP fetches for agents and providers.
+ * {@link getAgents} and {@link getProviders} both return an empty array
+ * rather than fabricated data whenever {@link state} isn't
+ * {@link NutanaaRuntimeConnectionState.Connected}, or if the fetch
+ * itself fails. Auto-reconnect is not implemented here either — a
+ * dropped connection moves to {@link NutanaaRuntimeConnectionState.Error}
+ * and stays there until something calls {@link connect} again.
  */
 export class NutanaaRuntimeConnectionService extends Disposable implements INutanaaRuntimeConnectionService {
 
@@ -50,7 +52,6 @@ export class NutanaaRuntimeConnectionService extends Disposable implements INuta
 		return this._state;
 	}
 
-	private _agents: readonly INutanaaAgentSummary[] = [];
 	private socket: WebSocket | undefined;
 
 	constructor(
@@ -81,10 +82,34 @@ export class NutanaaRuntimeConnectionService extends Disposable implements INuta
 		if (this._state !== NutanaaRuntimeConnectionState.Connected) {
 			return [];
 		}
-		// The runtime process doesn't report agents yet (Agent Engine is
-		// still unwired — Phase 2). Returns whatever was last pushed over
-		// the socket, which today is always empty.
-		return this._agents;
+		try {
+			const response = await fetch(`${NUTANAA_RUNTIME_HTTP_URL}/agents`);
+			if (!response.ok) {
+				this.logService.warn(`[Nutanaa] /agents returned HTTP ${response.status}.`);
+				return [];
+			}
+			return await response.json() as INutanaaAgentSummary[];
+		} catch (err) {
+			this.logService.warn('[Nutanaa] failed to fetch agents.', err);
+			return [];
+		}
+	}
+
+	async getProviders(): Promise<readonly INutanaaProviderSummary[]> {
+		if (this._state !== NutanaaRuntimeConnectionState.Connected) {
+			return [];
+		}
+		try {
+			const response = await fetch(`${NUTANAA_RUNTIME_HTTP_URL}/providers`);
+			if (!response.ok) {
+				this.logService.warn(`[Nutanaa] /providers returned HTTP ${response.status}.`);
+				return [];
+			}
+			return await response.json() as INutanaaProviderSummary[];
+		} catch (err) {
+			this.logService.warn('[Nutanaa] failed to fetch providers.', err);
+			return [];
+		}
 	}
 
 	private async checkHealth(): Promise<boolean> {
