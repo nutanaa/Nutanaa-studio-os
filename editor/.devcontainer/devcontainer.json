@@ -1,5 +1,5 @@
 {
-	"name": "Code - OSS",
+	"name": "Nutanaa Studio OS",
 	"build": {
 		"dockerfile": "Dockerfile"
 	},

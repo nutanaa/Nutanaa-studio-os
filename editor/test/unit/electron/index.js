@@ -252,11 +252,11 @@ app.on('ready', () => {
 		return {
 			product: {
 				version: '1.x.y',
-				nameShort: 'Code - OSS Dev',
-				nameLong: 'Code - OSS Dev',
-				applicationName: 'code-oss',
-				dataFolderName: '.vscode-oss',
-				urlProtocol: 'code-oss',
+				nameShort: 'Nutanaa Studio OS Dev',
+				nameLong: 'Nutanaa Studio OS Dev',
+				applicationName: 'nutanaa-studio-os',
+				dataFolderName: '.nutanaa-studio-os',
+				urlProtocol: 'nutanaa-studio-os',
 			}
 		};
 	});
