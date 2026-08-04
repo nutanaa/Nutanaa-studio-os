@@ -58,12 +58,62 @@ uvicorn backend.api.main:app --host 127.0.0.1 --port 8787 --reload
 ```
 Wait for `Nutanaa runtime started; API ready.` before moving on.
 
-**Terminal 3 — editor**:
+### Using VS Code tasks (recommended)
+
+The project includes `.vscode/settings.json`, `.vscode/tasks.json`, and
+`.vscode/launch.json` at the repo root. These handle venv activation and
+uvicorn startup automatically so you don't need to manage terminals manually.
+
+**How the venv is auto-loaded:**
+`.vscode/settings.json` points VS Code to the Python interpreter inside
+`editor/venv/`. When you open the project, VS Code automatically detects and
+uses this interpreter for all terminal sessions and debugging. No manual
+`source` or `activate` step is needed.
+
+**Starting uvicorn with a task:**
+1. Open Command Palette (`Ctrl+Shift+P`)
+2. Type `Tasks: Run Task` and select it
+3. Choose **Start uvicorn (backend)**
+4. A terminal opens at the bottom showing uvicorn output
+5. Wait for `Application startup complete` before using the editor
+
+**Stopping uvicorn:**
+1. Open Command Palette (`Ctrl+Shift+P`)
+2. Type `Tasks: Run Task` and select it
+3. Choose **Stop uvicorn (backend)**
+4. The uvicorn terminal closes
+
+**Restarting uvicorn (stop + start in one step):**
+1. Open Command Palette (`Ctrl+Shift+P`)
+2. Type `Tasks: Run Task` and select it
+3. Choose **Restart uvicorn (backend)**
+4. This runs Stop first, then Start automatically
+
+**Debugging the backend:**
+1. Open the Run and Debug panel (`Ctrl+Shift+D`)
+2. Select **Debug uvicorn (backend)** from the dropdown
+3. Press `F5` or click the green play button
+4. A terminal opens with uvicorn running under the debugger
+5. Set breakpoints in `backend/api/main.py` or `runtime/` files — they will
+   hit when requests arrive
+6. Use the Debug toolbar (Step Over, Step Into, Step Out, Continue) to
+   navigate through the code
+7. To stop debugging, press `Shift+F5` or click the red square in the
+   Debug toolbar
+
+**If uvicorn crashes or hangs during development:**
+- The `--reload` flag in the uvicorn args means it will auto-restart on
+  code changes in `backend/` and `runtime/`
+- If reload doesn't pick up changes, run **Restart uvicorn (backend)**
+- If the port `8787` is already in use (another uvicorn instance is running),
+  run **Stop uvicorn (backend)** first, then **Start uvicorn (backend)**
+
+**Terminal 3 â€” editor:**
 ```powershell
 cd C:\Users\purushotham\git\Nutanaa-studio-os\editor
 .\scripts\code.bat
 ```
-This is also the **rebuild** command — there's no separate build step.
+This is also the **rebuild** command â€” there's no separate build step.
 Every launch recompiles whatever changed since the last one. If a
 previous editor window is still open, close it before relaunching.
 
