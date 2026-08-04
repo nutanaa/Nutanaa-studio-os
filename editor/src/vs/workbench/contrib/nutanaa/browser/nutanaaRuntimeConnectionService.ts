@@ -18,6 +18,12 @@ import {
 /** Time to wait for /health to respond before treating the runtime as unreachable. */
 const HEALTH_CHECK_TIMEOUT_MS = 3000;
 
+/** Starting delay before the first automatic reconnect attempt. */
+const INITIAL_RETRY_DELAY_MS = 2000;
+
+/** Ceiling for the exponential backoff between reconnect attempts. */
+const MAX_RETRY_DELAY_MS = 30000;
+
 interface INutanaaHealthResponse {
 	readonly status: string;
 	readonly version: string;
@@ -33,9 +39,15 @@ interface INutanaaHealthResponse {
  * {@link getAgents} and {@link getProviders} both return an empty array
  * rather than fabricated data whenever {@link state} isn't
  * {@link NutanaaRuntimeConnectionState.Connected}, or if the fetch
- * itself fails. Auto-reconnect is not implemented here either — a
- * dropped connection moves to {@link NutanaaRuntimeConnectionState.Error}
- * and stays there until something calls {@link connect} again.
+ * itself fails.
+ *
+ * {@link connect} retries automatically with exponential backoff
+ * (2s → 4s → 8s → … capped at 30s) whenever a connection attempt fails
+ * or an established connection drops — this handles the common case of
+ * the editor launching slightly before the backend process is ready,
+ * without needing a manual "reconnect" command. Calling {@link connect}
+ * explicitly (e.g. at startup) always resets the backoff and tries
+ * immediately.
  */
 export class NutanaaRuntimeConnectionService extends Disposable implements INutanaaRuntimeConnectionService {
 
@@ -53,6 +65,8 @@ export class NutanaaRuntimeConnectionService extends Disposable implements INuta
 	}
 
 	private socket: WebSocket | undefined;
+	private retryTimer: ReturnType<typeof setTimeout> | undefined;
+	private retryDelayMs = INITIAL_RETRY_DELAY_MS;
 
 	constructor(
 		@ILogService private readonly logService: ILogService,
@@ -61,20 +75,49 @@ export class NutanaaRuntimeConnectionService extends Disposable implements INuta
 	}
 
 	async connect(): Promise<void> {
+		// An explicit connect() call (e.g. at startup) always resets the
+		// backoff and tries immediately, even if a retry was pending.
+		this.clearRetryTimer();
+		this.retryDelayMs = INITIAL_RETRY_DELAY_MS;
+		await this.attemptConnect();
+	}
+
+	private async attemptConnect(): Promise<void> {
 		this.setState(NutanaaRuntimeConnectionState.Connecting);
 
 		const healthy = await this.checkHealth();
 		if (!healthy) {
 			this.setState(NutanaaRuntimeConnectionState.Error);
+			this.scheduleRetry();
 			return;
 		}
 
 		try {
 			await this.openSocket();
 			this.setState(NutanaaRuntimeConnectionState.Connected);
+			this.retryDelayMs = INITIAL_RETRY_DELAY_MS;
 		} catch (err) {
 			this.logService.warn('[Nutanaa] failed to open runtime event socket.', err);
 			this.setState(NutanaaRuntimeConnectionState.Error);
+			this.scheduleRetry();
+		}
+	}
+
+	private scheduleRetry(): void {
+		this.clearRetryTimer();
+		const delaySeconds = Math.round(this.retryDelayMs / 1000);
+		this.logService.info(`[Nutanaa] retrying connection to runtime backend in ${delaySeconds}s…`);
+		this.retryTimer = setTimeout(() => {
+			this.retryTimer = undefined;
+			this.attemptConnect();
+		}, this.retryDelayMs);
+		this.retryDelayMs = Math.min(this.retryDelayMs * 2, MAX_RETRY_DELAY_MS);
+	}
+
+	private clearRetryTimer(): void {
+		if (this.retryTimer !== undefined) {
+			clearTimeout(this.retryTimer);
+			this.retryTimer = undefined;
 		}
 	}
 
@@ -162,6 +205,7 @@ export class NutanaaRuntimeConnectionService extends Disposable implements INuta
 					if (this._state === NutanaaRuntimeConnectionState.Connected) {
 						this.logService.warn('[Nutanaa] runtime event socket closed unexpectedly.');
 						this.setState(NutanaaRuntimeConnectionState.Error);
+						this.scheduleRetry();
 					}
 				}
 			});
@@ -194,6 +238,7 @@ export class NutanaaRuntimeConnectionService extends Disposable implements INuta
 	}
 
 	override dispose(): void {
+		this.clearRetryTimer();
 		this.socket?.close();
 		this.socket = undefined;
 		super.dispose();

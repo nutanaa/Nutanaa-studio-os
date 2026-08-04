@@ -25,15 +25,8 @@ import { NutanaaRuntimeConnectionService } from './nutanaaRuntimeConnectionServi
 import { NutanaaViews } from './nutanaaViews.js';
 import { nutanaaViewIcon } from './nutanaaIcons.js';
 
-// Runtime connection service — the single seam between the editor UI and
-// the (not yet implemented) FastAPI/WebSocket bridge to the Python runtime
-// core. Registered `Delayed` since nothing needs it until a Nutanaa view
-// actually becomes visible.
 registerSingleton(INutanaaRuntimeConnectionService, NutanaaRuntimeConnectionService, InstantiationType.Delayed);
 
-// View container — the Activity Bar entry hosting all Nutanaa sidebar
-// views (Agent Explorer today; Workflow/Provider/Memory/Task Explorers
-// follow the same registration pattern as they're added).
 const NUTANAA_VIEW_CONTAINER = Registry.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry).registerViewContainer(
 	{
 		id: NUTANAA_VIEW_CONTAINER_ID,
@@ -53,17 +46,18 @@ const NUTANAA_VIEW_CONTAINER = Registry.as<IViewContainersRegistry>(ViewContaine
 
 /**
  * Instantiates {@link NutanaaViews} once the workbench has restored its UI
- * state. `registerWorkbenchContribution2` only supports pure DI
- * constructors, so this thin wrapper is what carries the already-resolved
- * {@link NUTANAA_VIEW_CONTAINER} into `NutanaaViews`, mirroring how VS
- * Code's own `userDataSync` contribution wires `UserDataSyncDataViews`.
+ * state, and kicks off the one and only connect() call to the Nutanaa
+ * Runtime backend. Nothing else in the codebase calls connect() —
+ * this is deliberately the single place it happens.
  */
 class NutanaaContribution extends Disposable implements IWorkbenchContribution {
 	constructor(
 		@IInstantiationService instantiationService: IInstantiationService,
+		@INutanaaRuntimeConnectionService runtimeConnectionService: INutanaaRuntimeConnectionService,
 	) {
 		super();
 		this._register(instantiationService.createInstance(NutanaaViews, NUTANAA_VIEW_CONTAINER));
+		runtimeConnectionService.connect();
 	}
 }
 

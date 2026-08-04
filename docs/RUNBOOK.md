@@ -108,7 +108,7 @@ uses this interpreter for all terminal sessions and debugging. No manual
 - If the port `8787` is already in use (another uvicorn instance is running),
   run **Stop uvicorn (backend)** first, then **Start uvicorn (backend)**
 
-**Terminal 3 â€” editor:**
+**Terminal 3” editor:**
 ```powershell
 cd C:\Users\purushotham\git\Nutanaa-studio-os\editor
 .\scripts\code.bat
