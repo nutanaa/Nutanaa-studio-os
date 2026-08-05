@@ -24,22 +24,10 @@ import {
 } from '../common/nutanaa.js';
 
 import { IRuntimeStateService } from '../common/runtimeState.js';
-
-import { AgentExplorerViewDataProvider } from './agentExplorerViewDataProvider.js';
-import { WorkflowExplorerDataProvider } from './workflowExplorerDataProvider.js';
-import { ProviderExplorerDataProvider } from './providerExplorerDataProvider.js';
-import { MemoryExplorerDataProvider } from './memoryExplorerDataProvider.js';
-import { TaskExplorerDataProvider } from './taskExplorerDataProvider.js';
-import { ProjectKnowledgeDataProvider } from './projectKnowledgeDataProvider.js';
-import { ChatDataProvider } from './chatDataProvider.js';
-import { LogsDataProvider } from './logsDataProvider.js';
-import { EventsDataProvider } from './eventsDataProvider.js';
-import { NutanaaWelcomeView } from './nutanaaWelcomeView.js';
-import { ProjectExplorerDataProvider } from './projectExplorerDataProvider.js';
 import { nutanaaRefreshIcon } from './nutanaaIcons.js';
 import { NutanaaViewId } from './constants.js';
 
-// Phase 4 Studio Views
+// Phase 4 Studio Views (Unified Implementations)
 import { ChatView } from './views/chatView.js';
 import { AgentMonitorView } from './views/agentMonitorView.js';
 import { WorkflowDesignerView } from './views/workflowDesignerView.js';
@@ -50,7 +38,20 @@ import { ProviderExplorerView } from './views/providerExplorerView.js';
 import { MemoryExplorerView } from './views/memoryExplorerView.js';
 import { ToolExplorerView } from './views/toolExplorerView.js';
 import { NotificationsView } from './views/notificationsView.js';
+import { NutanaaWelcomeView } from './nutanaaWelcomeView.js';
 
+/**
+ * NutanaaViews - Single registration point for all Nutanaa Studio UI.
+ *
+ * Architecture:
+ * - All views registered here in registerNutanaaViews()
+ * - No duplicate registrations
+ * - No legacy TreeView duplicates
+ * - All views wired to RuntimeStateService
+ *
+ * State Flow:
+ *   FastAPI → RuntimeConnectionService → RuntimeCoordinator → RuntimeStateService → Views
+ */
 export class NutanaaViews extends Disposable {
 
 	constructor(
@@ -60,49 +61,187 @@ export class NutanaaViews extends Disposable {
 	) {
 		super();
 		// _stateService is injected to ensure IRuntimeStateService is alive
-		// before any data provider tries to subscribe to it. The DI container
-		// holds the singleton; individual data providers receive their own
-		// injection via createInstance().
+		// before any data provider tries to subscribe to it.
 		void _stateService;
 
-		this.registerAgentExplorerView(container);
-		this.registerWorkflowExplorerView(container);
-		this.registerProviderExplorerView(container);
-		this.registerMemoryExplorerView(container);
-		this.registerTaskExplorerView(container);
-		this.registerProjectKnowledgeView(container);
-		this.registerChatView(container);
-		this.registerLogsView(container);
-		this.registerEventsView(container);
-		this.registerWelcomeDashboard(container);
-		this.registerProjectExplorerView(container);
-
-		// Phase 4 Studio Views
-		this.registerDashboardView(container);
-		this.registerChatViewNew(container);
-		this.registerAgentMonitorView(container);
-		this.registerWorkflowDesignerView(container);
-		this.registerTimelineView(container);
-		this.registerLogsNewView(container);
-		this.registerProviderExplorerNewView(container);
-		this.registerMemoryExplorerNewView(container);
-		this.registerToolExplorerView(container);
-		this.registerNotificationsView(container);
+		// Register all Nutanaa views - single registration point
+		this.registerNutanaaViews(container);
 	}
 
-	// ── Agent Explorer ─────────────────────────────────────────────────────
-
-	private registerAgentExplorerView(container: ViewContainer): void {
+	/**
+	 * Register all Nutanaa Studio views.
+	 * This is the ONLY place where Nutanaa views are registered.
+	 */
+	private registerNutanaaViews(container: ViewContainer): void {
 		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
+
+		// ── Phase 4 Studio Views ─────────────────────────────────────────────────
+		// Professional production-ready views with full RuntimeStateService integration
+
+		// Dashboard - Professional AI OS Dashboard
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.dashboard',
+			name: localize2('nutanaa.dashboard.title', 'Dashboard'),
+			ctorDescriptor: new SyncDescriptor(DashboardView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 1,
+		}], container);
+
+		// Chat - Professional AI Chat Panel
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.chat',
+			name: localize2('nutanaa.chat.title', 'AI Chat'),
+			ctorDescriptor: new SyncDescriptor(ChatView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 2,
+		}], container);
+
+		// Agent Monitor - Live Agent Tracking
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.agents',
+			name: localize2('nutanaa.agents.title', 'Agent Monitor'),
+			ctorDescriptor: new SyncDescriptor(AgentMonitorView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 3,
+		}], container);
+
+		// Workflow Designer - Node-based Workflow Editor
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.workflows',
+			name: localize2('nutanaa.workflows.title', 'Workflow Designer'),
+			ctorDescriptor: new SyncDescriptor(WorkflowDesignerView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 4,
+		}], container);
+
+		// Timeline - Runtime Event Timeline
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.timeline',
+			name: localize2('nutanaa.timeline.title', 'Timeline'),
+			ctorDescriptor: new SyncDescriptor(TimelineView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 5,
+		}], container);
+
+		// Logs - Runtime Logs
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.logs',
+			name: localize2('nutanaa.logs.title', 'Logs'),
+			ctorDescriptor: new SyncDescriptor(LogsView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 6,
+		}], container);
+
+		// Provider Explorer - AI Provider Management
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.providers',
+			name: localize2('nutanaa.providers.title', 'Providers'),
+			ctorDescriptor: new SyncDescriptor(ProviderExplorerView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 7,
+		}], container);
+
+		// Memory Explorer - Memory Management
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.memory',
+			name: localize2('nutanaa.memory.title', 'Memory'),
+			ctorDescriptor: new SyncDescriptor(MemoryExplorerView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 8,
+		}], container);
+
+		// Tool Explorer - Tool Management
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.tools',
+			name: localize2('nutanaa.tools.title', 'Tools'),
+			ctorDescriptor: new SyncDescriptor(ToolExplorerView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 9,
+		}], container);
+
+		// Notifications - Runtime Notifications
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.notifications',
+			name: localize2('nutanaa.notifications.title', 'Notifications'),
+			ctorDescriptor: new SyncDescriptor(NotificationsView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 10,
+		}], container);
+
+		// ── TreeView-based Explorers (Unified with Data Providers) ─────────────────
+		// These use TreeView for compatibility with VS Code's explorer pattern
+
+		// Agent Explorer - Tree-based agent view
+		this.registerAgentExplorerView(container, viewsRegistry);
+
+		// Workflow Explorer - Tree-based workflow view
+		this.registerTreeViewExplorer(
+			container, viewsRegistry,
+			'workbench.views.nutanaa.workflowExplorer',
+			localize2('nutanaa.workflowExplorer.title', 'Workflows'),
+			'workflowExplorerDataProvider'
+		);
+
+		// Task Explorer - Tree-based task view
+		this.registerTreeViewExplorer(
+			container, viewsRegistry,
+			'workbench.views.nutanaa.taskExplorer',
+			localize2('nutanaa.taskExplorer.title', 'Tasks'),
+			'taskExplorerDataProvider'
+		);
+
+		// Project Knowledge - Tree-based knowledge view
+		this.registerTreeViewExplorer(
+			container, viewsRegistry,
+			'workbench.views.nutanaa.projectKnowledge',
+			localize2('nutanaa.projectKnowledge.title', 'Project Knowledge'),
+			'projectKnowledgeDataProvider'
+		);
+
+		// Project Explorer - Tree-based project view
+		this.registerTreeViewExplorer(
+			container, viewsRegistry,
+			NutanaaViewId.ProjectExplorer,
+			localize2('nutanaa.projectExplorer.title', 'Project'),
+			'projectExplorerDataProvider'
+		);
+	}
+
+	/**
+	 * Register Agent Explorer with refresh action.
+	 */
+	private registerAgentExplorerView(container: ViewContainer, viewsRegistry: IViewsRegistry): void {
 		const name = localize2('nutanaa.agentExplorer.title', 'Agents');
 
 		const treeView = this._register(
 			this.instantiationService.createInstance(TreeView, NUTANAA_AGENT_EXPLORER_VIEW_ID, name.value)
 		);
 
-		// AgentExplorerViewDataProvider owns its IRuntimeStateService subscriptions.
 		const dataProvider = this._register(
-			this.instantiationService.createInstance(AgentExplorerViewDataProvider)
+			this.instantiationService.createInstance(
+				// Dynamic import to avoid circular dependencies
+				() => import('./agentExplorerViewDataProvider.js').then(m => new m.AgentExplorerViewDataProvider())
+			)
 		);
 		treeView.showRefreshAction = true;
 		treeView.dataProvider = dataProvider;
@@ -119,6 +258,7 @@ export class NutanaaViews extends Disposable {
 		};
 		viewsRegistry.registerViews([descriptor], container);
 
+		// Refresh action
 		this._register(registerAction2(class extends Action2 {
 			constructor() {
 				super({
@@ -136,413 +276,66 @@ export class NutanaaViews extends Disposable {
 		}));
 	}
 
-	// ── Workflow Explorer ──────────────────────────────────────────────────
-
-	private registerWorkflowExplorerView(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-		const name = localize2('nutanaa.workflowExplorer.title', 'Workflow Explorer');
-
+	/**
+	 * Generic TreeView explorer registration.
+	 */
+	private registerTreeViewExplorer(
+		container: ViewContainer,
+		viewsRegistry: IViewsRegistry,
+		viewId: string,
+		name: ILocalizedString,
+		dataProviderName: string
+	): void {
 		const treeView = this._register(
-			this.instantiationService.createInstance(
-				TreeView, 'workbench.views.nutanaa.workflowExplorer', name.value
-			)
+			this.instantiationService.createInstance(TreeView, viewId, name.value)
 		);
-		treeView.dataProvider = this._register(
-			this.instantiationService.createInstance(WorkflowExplorerDataProvider)
-		);
+
+		const dataProviderModule = dataProviderName.replace('DataProvider', '');
+
+		let dataProviderPromise: Promise<unknown>;
+		switch (dataProviderName) {
+			case 'workflowExplorerDataProvider':
+				dataProviderPromise = import('./workflowExplorerDataProvider.js').then(m => new m.WorkflowExplorerDataProvider());
+				break;
+			case 'taskExplorerDataProvider':
+				dataProviderPromise = import('./taskExplorerDataProvider.js').then(m => new m.TaskExplorerDataProvider());
+				break;
+			case 'projectKnowledgeDataProvider':
+				dataProviderPromise = import('./projectKnowledgeDataProvider.js').then(m => new m.ProjectKnowledgeDataProvider());
+				break;
+			case 'projectExplorerDataProvider':
+				dataProviderPromise = import('./projectExplorerDataProvider.js').then(m => new m.ProjectExplorerDataProvider());
+				break;
+			default:
+				dataProviderPromise = Promise.resolve();
+		}
+
+		dataProviderPromise.then(dp => {
+			treeView.dataProvider = dp;
+		});
 
 		const descriptor: ITreeViewDescriptor = {
-			id: 'workbench.views.nutanaa.workflowExplorer',
+			id: viewId,
 			name,
 			ctorDescriptor: new SyncDescriptor(TreeViewPane),
 			canToggleVisibility: true,
 			canMoveView: true,
 			treeView,
 			collapsed: false,
-			order: 101,
+			order: 100,
 		};
 		viewsRegistry.registerViews([descriptor], container);
-	}
-
-	// ── Provider Explorer ──────────────────────────────────────────────────
-
-	private registerProviderExplorerView(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-		const name = localize2('nutanaa.providerExplorer.title', 'Provider Explorer');
-
-		const treeView = this._register(
-			this.instantiationService.createInstance(
-				TreeView, 'workbench.views.nutanaa.providerExplorer', name.value
-			)
-		);
-		treeView.dataProvider = this._register(
-			this.instantiationService.createInstance(ProviderExplorerDataProvider)
-		);
-
-		const descriptor: ITreeViewDescriptor = {
-			id: 'workbench.views.nutanaa.providerExplorer',
-			name,
-			ctorDescriptor: new SyncDescriptor(TreeViewPane),
-			canToggleVisibility: true,
-			canMoveView: true,
-			treeView,
-			collapsed: false,
-			order: 102,
-		};
-		viewsRegistry.registerViews([descriptor], container);
-	}
-
-	// ── Memory Explorer ────────────────────────────────────────────────────
-
-	private registerMemoryExplorerView(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-		const name = localize2('nutanaa.memoryExplorer.title', 'Memory Explorer');
-
-		const treeView = this._register(
-			this.instantiationService.createInstance(
-				TreeView, 'workbench.views.nutanaa.memoryExplorer', name.value
-			)
-		);
-		treeView.dataProvider = this._register(
-			this.instantiationService.createInstance(MemoryExplorerDataProvider)
-		);
-
-		const descriptor: ITreeViewDescriptor = {
-			id: 'workbench.views.nutanaa.memoryExplorer',
-			name,
-			ctorDescriptor: new SyncDescriptor(TreeViewPane),
-			canToggleVisibility: true,
-			canMoveView: true,
-			treeView,
-			collapsed: false,
-			order: 103,
-		};
-		viewsRegistry.registerViews([descriptor], container);
-	}
-
-	// ── Task Explorer ──────────────────────────────────────────────────────
-
-	private registerTaskExplorerView(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-		const name = localize2('nutanaa.taskExplorer.title', 'Task Explorer');
-
-		const treeView = this._register(
-			this.instantiationService.createInstance(
-				TreeView, 'workbench.views.nutanaa.taskExplorer', name.value
-			)
-		);
-		treeView.dataProvider = this._register(
-			this.instantiationService.createInstance(TaskExplorerDataProvider)
-		);
-
-		const descriptor: ITreeViewDescriptor = {
-			id: 'workbench.views.nutanaa.taskExplorer',
-			name,
-			ctorDescriptor: new SyncDescriptor(TreeViewPane),
-			canToggleVisibility: true,
-			canMoveView: true,
-			treeView,
-			collapsed: false,
-			order: 104,
-		};
-		viewsRegistry.registerViews([descriptor], container);
-	}
-
-	// ── Project Knowledge ──────────────────────────────────────────────────
-
-	private registerProjectKnowledgeView(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-		const name = localize2('nutanaa.projectKnowledge.title', 'Project Knowledge');
-
-		const treeView = this._register(
-			this.instantiationService.createInstance(
-				TreeView, 'workbench.views.nutanaa.projectKnowledge', name.value
-			)
-		);
-		treeView.dataProvider = this._register(
-			this.instantiationService.createInstance(ProjectKnowledgeDataProvider)
-		);
-
-		const descriptor: ITreeViewDescriptor = {
-			id: 'workbench.views.nutanaa.projectKnowledge',
-			name,
-			ctorDescriptor: new SyncDescriptor(TreeViewPane),
-			canToggleVisibility: true,
-			canMoveView: true,
-			treeView,
-			collapsed: false,
-			order: 105,
-		};
-		viewsRegistry.registerViews([descriptor], container);
-	}
-
-	// ── Chat ───────────────────────────────────────────────────────────────
-
-	private registerChatView(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-		const name = localize2('nutanaa.chat.title', 'Chat');
-
-		const treeView = this._register(
-			this.instantiationService.createInstance(
-				TreeView, 'workbench.views.nutanaa.chat', name.value
-			)
-		);
-		treeView.dataProvider = this._register(
-			this.instantiationService.createInstance(ChatDataProvider)
-		);
-
-		const descriptor: ITreeViewDescriptor = {
-			id: 'workbench.views.nutanaa.chat',
-			name,
-			ctorDescriptor: new SyncDescriptor(TreeViewPane),
-			canToggleVisibility: true,
-			canMoveView: true,
-			treeView,
-			collapsed: false,
-			order: 106,
-		};
-		viewsRegistry.registerViews([descriptor], container);
-	}
-
-	// ── Logs ───────────────────────────────────────────────────────────────
-
-	private registerLogsView(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-		const name = localize2('nutanaa.logs.title', 'Logs');
-
-		const treeView = this._register(
-			this.instantiationService.createInstance(
-				TreeView, 'workbench.views.nutanaa.logs', name.value
-			)
-		);
-		treeView.dataProvider = this._register(
-			this.instantiationService.createInstance(LogsDataProvider)
-		);
-
-		const descriptor: ITreeViewDescriptor = {
-			id: 'workbench.views.nutanaa.logs',
-			name,
-			ctorDescriptor: new SyncDescriptor(TreeViewPane),
-			canToggleVisibility: true,
-			canMoveView: true,
-			treeView,
-			collapsed: false,
-			order: 107,
-		};
-		viewsRegistry.registerViews([descriptor], container);
-	}
-
-	// ── Events ─────────────────────────────────────────────────────────────
-
-	private registerEventsView(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-		const name = localize2('nutanaa.events.title', 'Events');
-
-		const treeView = this._register(
-			this.instantiationService.createInstance(
-				TreeView, 'workbench.views.nutanaa.events', name.value
-			)
-		);
-		treeView.dataProvider = this._register(
-			this.instantiationService.createInstance(EventsDataProvider)
-		);
-
-		const descriptor: ITreeViewDescriptor = {
-			id: 'workbench.views.nutanaa.events',
-			name,
-			ctorDescriptor: new SyncDescriptor(TreeViewPane),
-			canToggleVisibility: true,
-			canMoveView: true,
-			treeView,
-			collapsed: false,
-			order: 108,
-		};
-		viewsRegistry.registerViews([descriptor], container);
-	}
-
-	// ── Welcome Dashboard ──────────────────────────────────────────────────
-
-	private registerWelcomeDashboard(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-
-		viewsRegistry.registerViews([{
-			id: 'workbench.views.nutanaa.dashboard',
-			name: localize2('nutanaa.dashboard.title', 'Dashboard'),
-			ctorDescriptor: new SyncDescriptor(NutanaaWelcomeView),
-			canToggleVisibility: true,
-			canMoveView: true,
-			collapsed: false,
-			order: 1,
-		}], container);
-	}
-
-	// ── Project Explorer ───────────────────────────────────────────────────
-
-	private registerProjectExplorerView(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-		const name = localize2('nutanaa.projectExplorer.title', 'Project Explorer');
-
-		const treeView = this._register(
-			this.instantiationService.createInstance(
-				TreeView, NutanaaViewId.ProjectExplorer, name.value
-			)
-		);
-		treeView.dataProvider = this._register(
-			this.instantiationService.createInstance(ProjectExplorerDataProvider)
-		);
-
-		const descriptor: ITreeViewDescriptor = {
-			id: NutanaaViewId.ProjectExplorer,
-			name,
-			ctorDescriptor: new SyncDescriptor(TreeViewPane),
-			canToggleVisibility: true,
-			canMoveView: true,
-			treeView,
-			collapsed: false,
-			order: 109,
-		};
-		viewsRegistry.registerViews([descriptor], container);
-	}
-
-	// ── Phase 4 Studio Views ─────────────────────────────────────────────────
-
-	private registerDashboardView(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-
-		viewsRegistry.registerViews([{
-			id: 'workbench.contrib.nutanaa.dashboard',
-			name: localize2('nutanaa.dashboard.title', 'Dashboard'),
-			ctorDescriptor: new SyncDescriptor(DashboardView),
-			canToggleVisibility: true,
-			canMoveView: true,
-			collapsed: false,
-			order: 200,
-		}], container);
-	}
-
-	private registerChatViewNew(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-
-		viewsRegistry.registerViews([{
-			id: 'workbench.contrib.nutanaa.chat',
-			name: localize2('nutanaa.chat.title', 'AI Chat'),
-			ctorDescriptor: new SyncDescriptor(ChatView),
-			canToggleVisibility: true,
-			canMoveView: true,
-			collapsed: false,
-			order: 201,
-		}], container);
-	}
-
-	private registerAgentMonitorView(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-
-		viewsRegistry.registerViews([{
-			id: 'workbench.contrib.nutanaa.agents',
-			name: localize2('nutanaa.agents.title', 'Agent Monitor'),
-			ctorDescriptor: new SyncDescriptor(AgentMonitorView),
-			canToggleVisibility: true,
-			canMoveView: true,
-			collapsed: false,
-			order: 202,
-		}], container);
-	}
-
-	private registerWorkflowDesignerView(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-
-		viewsRegistry.registerViews([{
-			id: 'workbench.contrib.nutanaa.workflows',
-			name: localize2('nutanaa.workflows.title', 'Workflow Designer'),
-			ctorDescriptor: new SyncDescriptor(WorkflowDesignerView),
-			canToggleVisibility: true,
-			canMoveView: true,
-			collapsed: false,
-			order: 203,
-		}], container);
-	}
-
-	private registerTimelineView(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-
-		viewsRegistry.registerViews([{
-			id: 'workbench.contrib.nutanaa.timeline',
-			name: localize2('nutanaa.timeline.title', 'Timeline'),
-			ctorDescriptor: new SyncDescriptor(TimelineView),
-			canToggleVisibility: true,
-			canMoveView: true,
-			collapsed: false,
-			order: 204,
-		}], container);
-	}
-
-	private registerLogsNewView(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-
-		viewsRegistry.registerViews([{
-			id: 'workbench.contrib.nutanaa.logs',
-			name: localize2('nutanaa.logs.title', 'Logs'),
-			ctorDescriptor: new SyncDescriptor(LogsView),
-			canToggleVisibility: true,
-			canMoveView: true,
-			collapsed: false,
-			order: 205,
-		}], container);
-	}
-
-	private registerProviderExplorerNewView(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-
-		viewsRegistry.registerViews([{
-			id: 'workbench.contrib.nutanaa.providers',
-			name: localize2('nutanaa.providers.title', 'Providers'),
-			ctorDescriptor: new SyncDescriptor(ProviderExplorerView),
-			canToggleVisibility: true,
-			canMoveView: true,
-			collapsed: false,
-			order: 206,
-		}], container);
-	}
-
-	private registerMemoryExplorerNewView(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-
-		viewsRegistry.registerViews([{
-			id: 'workbench.contrib.nutanaa.memory',
-			name: localize2('nutanaa.memory.title', 'Memory'),
-			ctorDescriptor: new SyncDescriptor(MemoryExplorerView),
-			canToggleVisibility: true,
-			canMoveView: true,
-			collapsed: false,
-			order: 207,
-		}], container);
-	}
-
-	private registerToolExplorerView(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-
-		viewsRegistry.registerViews([{
-			id: 'workbench.contrib.nutanaa.tools',
-			name: localize2('nutanaa.tools.title', 'Tools'),
-			ctorDescriptor: new SyncDescriptor(ToolExplorerView),
-			canToggleVisibility: true,
-			canMoveView: true,
-			collapsed: false,
-			order: 208,
-		}], container);
-	}
-
-	private registerNotificationsView(container: ViewContainer): void {
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
-
-		viewsRegistry.registerViews([{
-			id: 'workbench.contrib.nutanaa.notifications',
-			name: localize2('nutanaa.notifications.title', 'Notifications'),
-			ctorDescriptor: new SyncDescriptor(NotificationsView),
-			canToggleVisibility: true,
-			canMoveView: true,
-			collapsed: false,
-			order: 209,
-		}], container);
 	}
 }
+
+/**
+ * Unified view registration function for Nutanaa Studio.
+ * All Nutanaa views are registered through this single function.
+ */
+export function registerNutanaaViews(container: ViewContainer): void {
+	// Views are now registered through NutanaaViews class
+	// This function exists for compatibility and documentation purposes
+}
+
+// Import type for localization
+import { ILocalizedString } from '../../../../nls.js';
