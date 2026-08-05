@@ -38,7 +38,6 @@ import { ProviderExplorerView } from './views/providerExplorerView.js';
 import { MemoryExplorerView } from './views/memoryExplorerView.js';
 import { ToolExplorerView } from './views/toolExplorerView.js';
 import { NotificationsView } from './views/notificationsView.js';
-import { NutanaaWelcomeView } from './nutanaaWelcomeView.js';
 
 /**
  * NutanaaViews - Single registration point for all Nutanaa Studio UI.
