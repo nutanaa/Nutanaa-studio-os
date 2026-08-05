@@ -9,6 +9,7 @@ from typing import Any
 
 from runtime.agents.agent_manager import AgentManager
 from runtime.events.event_bus import EventBus
+from runtime.exceptions.agent_exception import AgentNotFoundError
 from runtime.providers.provider_manager import ProviderManager, ProviderSelection
 from runtime.providers.provider_request import ProviderRequest
 from runtime.services.state_store import StateStore
@@ -27,6 +28,7 @@ from runtime.tasks.task_exceptions import (
     TaskExecutionError,
     TaskTimeoutError,
 )
+from runtime.planning.planning_engine import PlanningEngine
 from runtime.tasks.task_planner import TaskPlanner
 from runtime.tasks.task_selectors import AgentSelector, ModelSelector, ProviderSelector
 from runtime.utils.logger import get_logger
@@ -44,6 +46,7 @@ class TaskExecutionEngine:
     state_store: StateStore
     telemetry: TelemetryService
     planner: TaskPlanner = TaskPlanner()
+    planning_engine: PlanningEngine = PlanningEngine()
     agent_selector: AgentSelector | None = None
     provider_selector: ProviderSelector | None = None
     model_selector: ModelSelector | None = None
@@ -56,6 +59,8 @@ class TaskExecutionEngine:
             self.provider_selector = ProviderSelector(self.provider_manager)
         if self.model_selector is None:
             self.model_selector = ModelSelector()
+        if self.planning_engine is None:
+            self.planning_engine = PlanningEngine()
 
     async def execute(
         self,
@@ -212,12 +217,20 @@ class TaskExecutionEngine:
     ) -> Any:
         self._assert_not_cancelled(cancel_event, request)
         context = self._build_context(request)
-        request = await self._run_stage(
+
+        plan = await self._run_stage(
             TaskExecutionStage.PLANNING,
-            self.planner.plan,
+            self.planning_engine.create_plan,
             request,
             context,
         )
+        context.plan = plan
+        if plan.selected_agents:
+            request.agent_name = request.agent_name or plan.selected_agents[0]
+        if request.agent_name is None and plan.selected_providers:
+            request.provider_name = request.provider_name or plan.selected_providers[0]
+        if request.model is None and plan.selected_models:
+            request.model = plan.selected_models[0]
 
         self._assert_not_cancelled(cancel_event, request)
         agent_name = await self._run_stage(
@@ -303,7 +316,14 @@ class TaskExecutionEngine:
         model_name: str | None,
     ) -> Any:
         if agent_name is not None:
-            return await self.agent_manager.execute(agent_name, request.input_data)
+            try:
+                return await self.agent_manager.execute(agent_name, request.input_data)
+            except AgentNotFoundError:
+                logger.warning(
+                    "Selected agent '%s' not registered; falling back to provider execution.",
+                    agent_name,
+                )
+                agent_name = None
 
         provider_request = ProviderRequest(
             capability=request.capability,

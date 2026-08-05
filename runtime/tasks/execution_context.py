@@ -32,3 +32,4 @@ class ExecutionContext:
     agent_selector: "AgentSelector" | None = None
     provider_selector: "ProviderSelector" | None = None
     model_selector: "ModelSelector" | None = None
+    plan: "ExecutionPlan" | None = None
