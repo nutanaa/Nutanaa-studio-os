@@ -5,54 +5,60 @@
 
 import { localize } from '../../../../nls.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
 import { ITreeItem, ITreeViewDataProvider, TreeItemCollapsibleState } from '../../../common/views.js';
-import {
-	INutanaaProviderSummary,
-	INutanaaRuntimeConnectionService,
-	NutanaaRuntimeConnectionState
-} from '../common/nutanaa.js';
+import { NutanaaRuntimeConnectionState } from '../common/nutanaa.js';
+import { IRuntimeStateService, IProviderState } from '../common/runtimeState.js';
 
 /**
- * Populates the Provider Explorer tree from {@link INutanaaRuntimeConnectionService}.
+ * Populates the Provider Explorer tree from {@link IRuntimeStateService}.
  *
- * Previously this showed a hardcoded catalog of ~15 providers (OpenAI,
- * Anthropic, Runway, ElevenLabs, etc.) that were never actually
- * integrated — pure fiction. This now shows only providers genuinely
- * registered with the runtime (`runtime/providers/provider_manager.py`),
- * with their real, currently-measured health. When the runtime backend
- * is not connected, it surfaces a single honest "not connected" item
- * rather than fabricating a provider catalog.
+ * Subscribes to {@link IRuntimeStateService.onProvidersChanged} and
+ * {@link IRuntimeStateService.onConnectionChanged}; the tree refreshes
+ * automatically — no local cache, no direct calls to the connection service.
  */
 export class ProviderExplorerDataProvider extends Disposable implements ITreeViewDataProvider {
 
 	private static readonly DISCONNECTED_HANDLE = 'nutanaa.providerExplorer.disconnected';
 
+	private readonly _onDidChangeTreeData = this._register(new Emitter<ITreeItem[] | void>());
+	readonly onDidChangeTreeData: Event<ITreeItem[] | void> = this._onDidChangeTreeData.event;
+
 	constructor(
-		@INutanaaRuntimeConnectionService private readonly runtimeConnectionService: INutanaaRuntimeConnectionService,
+		@IRuntimeStateService private readonly stateService: IRuntimeStateService,
 	) {
 		super();
+
+		this._register(
+			this.stateService.onProvidersChanged(() => this._onDidChangeTreeData.fire())
+		);
+		this._register(
+			this.stateService.onConnectionChanged(() => this._onDidChangeTreeData.fire())
+		);
 	}
 
 	async getChildren(element?: ITreeItem): Promise<readonly ITreeItem[] | undefined> {
-		// Only the root has children; providers themselves are leaves.
 		if (element) {
 			return undefined;
 		}
 
-		if (this.runtimeConnectionService.state !== NutanaaRuntimeConnectionState.Connected) {
-			return [this.toDisconnectedItem()];
+		const state = this.stateService.getState();
+		const connectionStatus = state.connection.status;
+
+		if (connectionStatus !== NutanaaRuntimeConnectionState.Connected) {
+			return [this.buildDisconnectedItem(connectionStatus)];
 		}
 
-		const providers = await this.runtimeConnectionService.getProviders();
+		const providers = Object.values(state.providers);
 		if (providers.length === 0) {
-			return [this.toEmptyItem()];
+			return [this.buildEmptyItem()];
 		}
 
-		return providers.map(provider => this.toProviderItem(provider));
+		return providers.map(p => this.buildProviderItem(p));
 	}
 
-	private toDisconnectedItem(): ITreeItem {
-		const label = this.runtimeConnectionService.state === NutanaaRuntimeConnectionState.Connecting
+	private buildDisconnectedItem(status: NutanaaRuntimeConnectionState): ITreeItem {
+		const label = status === NutanaaRuntimeConnectionState.Connecting
 			? localize('nutanaa.providerExplorer.connecting', "Connecting to Nutanaa Runtime…")
 			: localize('nutanaa.providerExplorer.disconnected', "Not connected to Nutanaa Runtime");
 
@@ -64,7 +70,7 @@ export class ProviderExplorerDataProvider extends Disposable implements ITreeVie
 		};
 	}
 
-	private toEmptyItem(): ITreeItem {
+	private buildEmptyItem(): ITreeItem {
 		return {
 			handle: 'nutanaa.providerExplorer.empty',
 			label: { label: localize('nutanaa.providerExplorer.empty', "No providers are registered") },
@@ -73,18 +79,21 @@ export class ProviderExplorerDataProvider extends Disposable implements ITreeVie
 		};
 	}
 
-	private toProviderItem(provider: INutanaaProviderSummary): ITreeItem {
-		const modelInfo = provider.activeModel
-			? `${provider.activeModel} · ${provider.status}`
-			: provider.status;
+	private buildProviderItem(entry: IProviderState): ITreeItem {
+		const { summary } = entry;
+		const modelInfo = summary.activeModel
+			? `${summary.activeModel} · ${summary.status}`
+			: summary.status;
 
 		return {
-			handle: `nutanaa.providerExplorer.provider.${provider.id}`,
-			label: { label: provider.name },
+			handle: `nutanaa.providerExplorer.provider.${summary.id}`,
+			label: { label: summary.name },
 			description: modelInfo,
-			tooltip: provider.message,
+			tooltip: summary.message,
 			collapsibleState: TreeItemCollapsibleState.None,
-			contextValue: provider.healthy ? 'nutanaaProviderExplorer.healthy' : 'nutanaaProviderExplorer.unhealthy',
+			contextValue: summary.healthy
+				? 'nutanaaProviderExplorer.healthy'
+				: 'nutanaaProviderExplorer.unhealthy',
 		};
 	}
 }

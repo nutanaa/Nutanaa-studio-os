@@ -5,64 +5,78 @@
 
 import { localize } from '../../../../nls.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
 import { ITreeItem, ITreeViewDataProvider, TreeItemCollapsibleState } from '../../../common/views.js';
-import {
-	INutanaaAgentSummary,
-	INutanaaRuntimeConnectionService,
-	NutanaaRuntimeConnectionState
-} from '../common/nutanaa.js';
+import { NutanaaRuntimeConnectionState } from '../common/nutanaa.js';
+import { IRuntimeStateService, IRuntimeAgentState } from '../common/runtimeState.js';
 
 /**
- * Populates the Agent Explorer tree from {@link INutanaaRuntimeConnectionService}.
+ * Populates the Agent Explorer tree from {@link IRuntimeStateService}.
  *
- * When the runtime backend is not connected, this provider surfaces a
- * single, honest "not connected" tree item rather than fabricating agent
- * data — there is no backend bridge yet (Nutanaa Studio OS Phase 3), so
- * showing fake agents here would be actively misleading.
+ * The provider subscribes to {@link IRuntimeStateService.onAgentsChanged} and
+ * {@link IRuntimeStateService.onConnectionChanged} so the tree refreshes
+ * automatically whenever state changes — no manual polling, no local cache.
  */
 export class AgentExplorerViewDataProvider extends Disposable implements ITreeViewDataProvider {
 
 	private static readonly DISCONNECTED_HANDLE = 'nutanaa.agentExplorer.disconnected';
 
+	private readonly _onDidChangeTreeData = this._register(new Emitter<ITreeItem[] | void>());
+	readonly onDidChangeTreeData: Event<ITreeItem[] | void> = this._onDidChangeTreeData.event;
+
 	constructor(
-		@INutanaaRuntimeConnectionService private readonly runtimeConnectionService: INutanaaRuntimeConnectionService,
+		@IRuntimeStateService private readonly stateService: IRuntimeStateService,
 	) {
 		super();
+
+		// Refresh the tree whenever the agents map or connection state changes.
+		this._register(
+			this.stateService.onAgentsChanged(() => this._onDidChangeTreeData.fire())
+		);
+		this._register(
+			this.stateService.onConnectionChanged(() => this._onDidChangeTreeData.fire())
+		);
 	}
 
 	async getChildren(element?: ITreeItem): Promise<readonly ITreeItem[] | undefined> {
-		// Only the root has children; agents themselves are leaves.
 		if (element) {
+			// Agent nodes are leaves.
 			return undefined;
 		}
 
-		if (this.runtimeConnectionService.state !== NutanaaRuntimeConnectionState.Connected) {
-			return [this.toDisconnectedItem()];
+		const state = this.stateService.getState();
+		const connectionStatus = state.connection.status;
+
+		if (connectionStatus !== NutanaaRuntimeConnectionState.Connected) {
+			return [this.buildDisconnectedItem(connectionStatus)];
 		}
 
-		const agents = await this.runtimeConnectionService.getAgents();
+		const agents = Object.values(state.agents);
 		if (agents.length === 0) {
-			return [this.toEmptyItem()];
+			return [this.buildEmptyItem()];
 		}
 
-		return agents.map(agent => this.toAgentItem(agent));
+		return agents.map(a => this.buildAgentItem(a));
 	}
 
-	private toDisconnectedItem(): ITreeItem {
-		const label = this.runtimeConnectionService.state === NutanaaRuntimeConnectionState.Connecting
+	private buildDisconnectedItem(status: NutanaaRuntimeConnectionState): ITreeItem {
+		const label = status === NutanaaRuntimeConnectionState.Connecting
 			? localize('nutanaa.agentExplorer.connecting', "Connecting to Nutanaa Runtime…")
 			: localize('nutanaa.agentExplorer.disconnected', "Not connected to Nutanaa Runtime");
 
 		return {
 			handle: AgentExplorerViewDataProvider.DISCONNECTED_HANDLE,
 			label: { label },
-			description: localize('nutanaa.agentExplorer.disconnectedDescription', "Run 'Nutanaa: Refresh Agents' once the runtime is started"),
+			description: localize(
+				'nutanaa.agentExplorer.disconnectedDescription',
+				"Run 'Nutanaa: Refresh Agents' once the runtime is started"
+			),
 			collapsibleState: TreeItemCollapsibleState.None,
 			contextValue: 'nutanaaAgentExplorer.disconnected',
 		};
 	}
 
-	private toEmptyItem(): ITreeItem {
+	private buildEmptyItem(): ITreeItem {
 		return {
 			handle: 'nutanaa.agentExplorer.empty',
 			label: { label: localize('nutanaa.agentExplorer.empty', "No agents are currently running") },
@@ -71,11 +85,12 @@ export class AgentExplorerViewDataProvider extends Disposable implements ITreeVi
 		};
 	}
 
-	private toAgentItem(agent: INutanaaAgentSummary): ITreeItem {
+	private buildAgentItem(entry: IRuntimeAgentState): ITreeItem {
+		const { summary } = entry;
 		return {
-			handle: `nutanaa.agentExplorer.agent.${agent.id}`,
-			label: { label: agent.name },
-			description: `${agent.role} · ${agent.status}`,
+			handle: `nutanaa.agentExplorer.agent.${summary.id}`,
+			label: { label: summary.name },
+			description: `${summary.role} · ${summary.status}`,
 			collapsibleState: TreeItemCollapsibleState.None,
 			contextValue: 'nutanaaAgentExplorer.agent',
 		};

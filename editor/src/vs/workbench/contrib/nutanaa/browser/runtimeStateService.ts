@@ -11,7 +11,6 @@ import {
 	IRuntimeStateService,
 	IRuntimeState,
 	IRuntimeStateSnapshot,
-	RuntimeStateUpdate,
 	IConnectionState,
 	IRuntimeAgentState,
 	IProviderState,
@@ -21,11 +20,15 @@ import {
 	IMemoryState,
 	INotificationState,
 	IMetricsState,
+	ConnectionUpdate,
+	AgentUpdate,
+	ProviderUpdate,
+	TaskUpdate,
+	WorkflowUpdate,
+	MetricsUpdate,
 } from '../common/runtimeState.js';
 
-import {
-	IRuntimeEventBus,
-} from '../common/runtimeEventBus.js';
+import { IRuntimeEventBus } from '../common/runtimeEventBus.js';
 
 import {
 	RuntimeEventType,
@@ -43,18 +46,20 @@ import {
 	NutanaaRuntimeConnectionState,
 } from '../common/nutanaa.js';
 
+import { MemoryType } from '../models/memoryModel.js';
+
 /*---------------------------------------------------------------------------------------------
  * Constants
  *--------------------------------------------------------------------------------------------*/
 
-/** Maximum number of log entries kept in the ring buffer. */
+/** Maximum log entries retained in the ring buffer. */
 const MAX_LOG_ENTRIES = 2000;
 
-/** Maximum number of notifications kept in state (oldest dismissed first). */
+/** Maximum notifications retained before oldest dismissed entries are evicted. */
 const MAX_NOTIFICATIONS = 200;
 
 /*---------------------------------------------------------------------------------------------
- * Initial state factory
+ * Initial-state factories
  *--------------------------------------------------------------------------------------------*/
 
 function buildInitialConnectionState(): IConnectionState {
@@ -68,15 +73,16 @@ function buildInitialConnectionState(): IConnectionState {
 }
 
 function buildInitialMemoryState(): IMemoryState {
+	const countByType: Record<MemoryType, number> = {
+		workspace: 0,
+		conversation: 0,
+		agent: 0,
+		project: 0,
+		knowledge: 0,
+	};
 	return {
 		totalEntries: 0,
-		countByType: {
-			workspace: 0,
-			conversation: 0,
-			agent: 0,
-			project: 0,
-			knowledge: 0,
-		},
+		countByType,
 		recentEntries: [],
 		lastUpdatedAt: undefined,
 	};
@@ -117,20 +123,19 @@ function buildInitialState(): IRuntimeState {
  *     ↓
  *   NutanaaRuntimeConnectionService   (transport)
  *     ↓
- *   RuntimeCoordinator                (coordination)
+ *   RuntimeCoordinator                (coordination — no state ownership)
  *     ↓
  *   RuntimeEventBus                   (pub/sub)
  *     ↓
- *   RuntimeStateService               (state)
+ *   RuntimeStateService               ← this class  (state)
  *     ↓
- *   Views / Chat / Logs / Timeline / Commands / Agent Monitor
+ *   Views / Panels / Chat / Logs / Timeline / Agent Monitor
  *
- * Views MUST read from this service and NEVER from
- * NutanaaRuntimeConnectionService or RuntimeCoordinator directly.
- *
- * RuntimeStateService is the ONLY writer of IRuntimeState. All state
- * mutations go through `update()` which produces a new immutable state
- * object and fires `onDidChangeState`.
+ * Architecture laws enforced here:
+ *   • RuntimeStateService is the ONLY writer of IRuntimeState.
+ *   • All mutations go through the named update methods.
+ *   • Every mutation fires both the relevant granular event AND onDidChangeState.
+ *   • Views subscribe to granular events and NEVER to NutanaaRuntimeConnectionService.
  */
 export class RuntimeStateService extends Disposable implements IRuntimeStateService {
 
@@ -142,63 +147,85 @@ export class RuntimeStateService extends Disposable implements IRuntimeStateServ
 
 	private _state: IRuntimeState = buildInitialState();
 
-	/** Monotonically-increasing serial used to generate unique log / notification ids. */
+	/** Monotonically-increasing counter for generating stable log / notification ids. */
 	private _serial = 0;
 
 	/*-------------------------------------------------------------------------------------------
-	 * Public event
+	 * Emitters — granular events
 	 *------------------------------------------------------------------------------------------*/
 
 	private readonly _onDidChangeState = this._register(new Emitter<IRuntimeState>());
 	public readonly onDidChangeState: Event<IRuntimeState> = this._onDidChangeState.event;
 
+	private readonly _onConnectionChanged = this._register(new Emitter<IConnectionState>());
+	public readonly onConnectionChanged: Event<IConnectionState> = this._onConnectionChanged.event;
+
+	private readonly _onAgentsChanged = this._register(
+		new Emitter<Readonly<Record<string, IRuntimeAgentState>>>()
+	);
+	public readonly onAgentsChanged: Event<Readonly<Record<string, IRuntimeAgentState>>> =
+		this._onAgentsChanged.event;
+
+	private readonly _onProvidersChanged = this._register(
+		new Emitter<Readonly<Record<string, IProviderState>>>()
+	);
+	public readonly onProvidersChanged: Event<Readonly<Record<string, IProviderState>>> =
+		this._onProvidersChanged.event;
+
+	private readonly _onTasksChanged = this._register(
+		new Emitter<Readonly<Record<string, ITaskState>>>()
+	);
+	public readonly onTasksChanged: Event<Readonly<Record<string, ITaskState>>> =
+		this._onTasksChanged.event;
+
+	private readonly _onWorkflowsChanged = this._register(
+		new Emitter<Readonly<Record<string, IWorkflowState>>>()
+	);
+	public readonly onWorkflowsChanged: Event<Readonly<Record<string, IWorkflowState>>> =
+		this._onWorkflowsChanged.event;
+
+	private readonly _onLogsChanged = this._register(new Emitter<readonly ILogEntry[]>());
+	public readonly onLogsChanged: Event<readonly ILogEntry[]> = this._onLogsChanged.event;
+
 	/*-------------------------------------------------------------------------------------------
-	 * Constructor — wire up subscriptions
+	 * Constructor — wire subscriptions
 	 *------------------------------------------------------------------------------------------*/
 
 	constructor(
 		@IRuntimeEventBus private readonly eventBus: IRuntimeEventBus,
-		@INutanaaRuntimeConnectionService private readonly connectionService: INutanaaRuntimeConnectionService,
+		@INutanaaRuntimeConnectionService
+		private readonly connectionService: INutanaaRuntimeConnectionService,
 		@ILogService private readonly logService: ILogService,
 	) {
 		super();
 
-		// Subscribe to the runtime event bus — every subsystem event flows here.
+		// Every bus event folds into the appropriate state slice.
 		this._register(this.eventBus.onEvent(e => this.handleEvent(e)));
 
-		// Mirror connection-state changes from the transport layer into our slice.
+		// Mirror connection-state transitions from the transport layer.
 		this._register(
-			this.connectionService.onDidChangeState(state => this.handleConnectionStateChange(state))
+			this.connectionService.onDidChangeState(
+				state => this.handleConnectionStateChange(state)
+			)
 		);
 
-		// When agents change (polled by connection service), sync them into state.
+		// On agents-changed signal (polled by the connection service) re-sync.
 		this._register(
-			this.connectionService.onDidChangeAgents(() => this.syncAgentsFromBackend())
+			this.connectionService.onDidChangeAgents(
+				() => void this.syncAgentsFromBackend()
+			)
 		);
 
-		// Populate initial connection state from whatever state the service is
-		// already in (e.g. if the service was constructed before us).
+		// Reflect whatever state the connection service is already in.
 		this.handleConnectionStateChange(this.connectionService.state);
 	}
 
 	/*-------------------------------------------------------------------------------------------
-	 * IRuntimeStateService — public API
+	 * IRuntimeStateService — reads
 	 *------------------------------------------------------------------------------------------*/
 
 	public getState(): IRuntimeState {
 		return this._state;
-	}
-
-	public update(patch: RuntimeStateUpdate): void {
-		this._state = { ...this._state, ...patch };
-		this._onDidChangeState.fire(this._state);
-	}
-
-	public clear(): void {
-		this._state = buildInitialState();
-		this._serial = 0;
-		this._onDidChangeState.fire(this._state);
-		this.logService.info('[NutanaaState] state cleared.');
 	}
 
 	public snapshot(): IRuntimeStateSnapshot {
@@ -209,7 +236,126 @@ export class RuntimeStateService extends Disposable implements IRuntimeStateServ
 	}
 
 	/*-------------------------------------------------------------------------------------------
-	 * Connection state handling
+	 * IRuntimeStateService — named writes
+	 *------------------------------------------------------------------------------------------*/
+
+	public updateConnection(patch: ConnectionUpdate): void {
+		const connection: IConnectionState = { ...this._state.connection, ...patch };
+		this._state = { ...this._state, connection };
+		this._onConnectionChanged.fire(connection);
+		this._onDidChangeState.fire(this._state);
+	}
+
+	public updateAgents(agents: AgentUpdate): void {
+		this._state = { ...this._state, agents };
+		this._onAgentsChanged.fire(agents);
+		this._onDidChangeState.fire(this._state);
+	}
+
+	public updateProviders(providers: ProviderUpdate): void {
+		this._state = { ...this._state, providers };
+		this._onProvidersChanged.fire(providers);
+		this._onDidChangeState.fire(this._state);
+	}
+
+	public updateTasks(incoming: TaskUpdate): void {
+		const tasks = { ...this._state.tasks, ...incoming };
+		this._state = { ...this._state, tasks };
+		this._onTasksChanged.fire(tasks);
+		this._onDidChangeState.fire(this._state);
+	}
+
+	public updateWorkflows(incoming: WorkflowUpdate): void {
+		const workflows = { ...this._state.workflows, ...incoming };
+		this._state = { ...this._state, workflows };
+		this._onWorkflowsChanged.fire(workflows);
+		this._onDidChangeState.fire(this._state);
+	}
+
+	public appendLog(
+		message: string,
+		level: ILogEntry['level'],
+		source?: string,
+	): void {
+		const entry: ILogEntry = {
+			id: `log-${++this._serial}`,
+			level,
+			message,
+			source,
+			timestamp: Date.now(),
+		};
+
+		const existing = this._state.logs;
+		const logs: readonly ILogEntry[] = existing.length < MAX_LOG_ENTRIES
+			? [...existing, entry]
+			: [...existing.slice(existing.length - MAX_LOG_ENTRIES + 1), entry];
+
+		this._state = { ...this._state, logs };
+		this._onLogsChanged.fire(logs);
+		this._onDidChangeState.fire(this._state);
+	}
+
+	public clearLogs(): void {
+		this._state = { ...this._state, logs: [] };
+		this._onLogsChanged.fire([]);
+		this._onDidChangeState.fire(this._state);
+	}
+
+	public updateMetrics(patch: MetricsUpdate): void {
+		const metrics: IMetricsState = { ...this._state.metrics, ...patch };
+		this._state = { ...this._state, metrics };
+		this._onDidChangeState.fire(this._state);
+	}
+
+	public reset(): void {
+		this._state = buildInitialState();
+		this._serial = 0;
+
+		// Fire every granular event so subscribers that only listen to a single
+		// slice still get notified on a full reset.
+		this._onConnectionChanged.fire(this._state.connection);
+		this._onAgentsChanged.fire(this._state.agents);
+		this._onProvidersChanged.fire(this._state.providers);
+		this._onTasksChanged.fire(this._state.tasks);
+		this._onWorkflowsChanged.fire(this._state.workflows);
+		this._onLogsChanged.fire(this._state.logs);
+		this._onDidChangeState.fire(this._state);
+
+		this.logService.info('[NutanaaState] state reset.');
+	}
+
+	/*-------------------------------------------------------------------------------------------
+	 * IRuntimeStateService — low-level write (internal / legacy)
+	 *------------------------------------------------------------------------------------------*/
+
+	public update(patch: Partial<IRuntimeState>): void {
+		const prev = this._state;
+		this._state = { ...prev, ...patch };
+
+		if (patch.connection !== undefined) {
+			this._onConnectionChanged.fire(this._state.connection);
+		}
+		if (patch.agents !== undefined) {
+			this._onAgentsChanged.fire(this._state.agents);
+		}
+		if (patch.providers !== undefined) {
+			this._onProvidersChanged.fire(this._state.providers);
+		}
+		if (patch.tasks !== undefined) {
+			this._onTasksChanged.fire(this._state.tasks);
+		}
+		if (patch.workflows !== undefined) {
+			this._onWorkflowsChanged.fire(this._state.workflows);
+		}
+		if (patch.logs !== undefined) {
+			this._onLogsChanged.fire(this._state.logs);
+		}
+
+		this._onDidChangeState.fire(this._state);
+	}
+
+	/*-------------------------------------------------------------------------------------------
+	 * Connection state — internal handler
 	 *------------------------------------------------------------------------------------------*/
 
 	private handleConnectionStateChange(status: NutanaaRuntimeConnectionState): void {
@@ -223,7 +369,6 @@ export class RuntimeStateService extends Disposable implements IRuntimeStateServ
 		switch (status) {
 			case NutanaaRuntimeConnectionState.Connected:
 				lastConnectedAt = Date.now();
-				// Pull latest agents and providers now that we are live.
 				void this.syncAgentsFromBackend();
 				void this.syncProvidersFromBackend();
 				break;
@@ -238,48 +383,34 @@ export class RuntimeStateService extends Disposable implements IRuntimeStateServ
 				break;
 
 			case NutanaaRuntimeConnectionState.Disconnected:
-				// Wipe runtime data that is only valid while connected.
-				this.update({
-					connection: {
-						status,
-						lastConnectedAt,
-						lastErrorAt,
-						lastErrorMessage,
-						reconnectAttempts,
-					},
-					agents: {},
-					providers: {},
-				});
+				// Wipe data that is only valid while live; preserve audit fields.
+				this.updateConnection({ status, lastConnectedAt, lastErrorAt, lastErrorMessage, reconnectAttempts });
+				this.updateAgents({});
+				this.updateProviders({});
 				return;
 		}
 
-		const connection: IConnectionState = {
+		this.updateConnection({
 			status,
 			lastConnectedAt,
 			lastErrorAt,
 			lastErrorMessage,
 			reconnectAttempts,
-		};
-
-		this.update({ connection });
+		});
 	}
 
 	/*-------------------------------------------------------------------------------------------
-	 * Backend sync helpers (called on connect / agents-changed signal)
+	 * Backend sync helpers
 	 *------------------------------------------------------------------------------------------*/
 
 	private async syncAgentsFromBackend(): Promise<void> {
 		if (this.connectionService.state !== NutanaaRuntimeConnectionState.Connected) {
 			return;
 		}
-
 		try {
 			const summaries = await this.connectionService.getAgents();
 			const agents: Record<string, IRuntimeAgentState> = {};
-
 			for (const summary of summaries) {
-				// Preserve existing per-agent metrics / queue that were populated
-				// via bus events so a backend refresh does not clobber them.
 				const existing = this._state.agents[summary.id];
 				agents[summary.id] = {
 					summary,
@@ -287,8 +418,7 @@ export class RuntimeStateService extends Disposable implements IRuntimeStateServ
 					queue: existing?.queue,
 				};
 			}
-
-			this.update({ agents });
+			this.updateAgents(agents);
 		} catch (err) {
 			this.logService.warn('[NutanaaState] failed to sync agents from backend.', err);
 		}
@@ -298,51 +428,42 @@ export class RuntimeStateService extends Disposable implements IRuntimeStateServ
 		if (this.connectionService.state !== NutanaaRuntimeConnectionState.Connected) {
 			return;
 		}
-
 		try {
 			const summaries = await this.connectionService.getProviders();
 			const providers: Record<string, IProviderState> = {};
 			const now = Date.now();
-
 			for (const summary of summaries) {
-				providers[summary.id] = {
-					summary,
-					lastCheckedAt: now,
-				};
+				providers[summary.id] = { summary, lastCheckedAt: now };
 			}
-
-			this.update({ providers });
+			this.updateProviders(providers);
 		} catch (err) {
 			this.logService.warn('[NutanaaState] failed to sync providers from backend.', err);
 		}
 	}
 
 	/*-------------------------------------------------------------------------------------------
-	 * RuntimeEventBus handler — folds every bus event into the correct slice
+	 * RuntimeEventBus handler
 	 *------------------------------------------------------------------------------------------*/
 
 	private handleEvent(event: RuntimeEvent): void {
 		switch (event.type) {
 
-			// ── Runtime connection events ────────────────────────────────────────
+			// ── Runtime connection ───────────────────────────────────────────────
 			case RuntimeEventType.RuntimeConnected:
 				this.handleConnectionStateChange(NutanaaRuntimeConnectionState.Connected);
 				break;
-
 			case RuntimeEventType.RuntimeDisconnected:
 				this.handleConnectionStateChange(NutanaaRuntimeConnectionState.Disconnected);
 				break;
-
 			case RuntimeEventType.RuntimeConnecting:
 			case RuntimeEventType.RuntimeReconnect:
 				this.handleConnectionStateChange(NutanaaRuntimeConnectionState.Connecting);
 				break;
-
 			case RuntimeEventType.RuntimeError:
 				this.handleConnectionStateChange(NutanaaRuntimeConnectionState.Error);
 				break;
 
-			// ── Agent events ─────────────────────────────────────────────────────
+			// ── Agents ───────────────────────────────────────────────────────────
 			case RuntimeEventType.AgentRegistered:
 			case RuntimeEventType.AgentStarted:
 			case RuntimeEventType.AgentQueued:
@@ -351,163 +472,163 @@ export class RuntimeStateService extends Disposable implements IRuntimeStateServ
 			case RuntimeEventType.AgentFailed:
 			case RuntimeEventType.AgentCancelled:
 			case RuntimeEventType.AgentUnregistered:
-				this.handleAgentEvent(event.type, event.payload as AgentEvent);
+				this.foldAgentEvent(event.type, event.payload as AgentEvent);
 				break;
 
-			// ── Provider events ──────────────────────────────────────────────────
+			// ── Providers ────────────────────────────────────────────────────────
 			case RuntimeEventType.ProviderRegistered:
 			case RuntimeEventType.ProviderRemoved:
 			case RuntimeEventType.ProviderChanged:
 			case RuntimeEventType.ProviderHealthy:
 			case RuntimeEventType.ProviderUnhealthy:
-				this.handleProviderEvent(event.type, event.payload as ProviderEvent);
+				this.foldProviderEvent(event.type, event.payload as ProviderEvent);
 				break;
 
-			// ── Workflow events ──────────────────────────────────────────────────
+			// ── Workflows ────────────────────────────────────────────────────────
 			case RuntimeEventType.WorkflowCreated:
 			case RuntimeEventType.WorkflowStarted:
 			case RuntimeEventType.WorkflowRunning:
 			case RuntimeEventType.WorkflowCompleted:
 			case RuntimeEventType.WorkflowFailed:
 			case RuntimeEventType.WorkflowCancelled:
-				this.handleWorkflowEvent(event.type, event.payload as WorkflowEvent);
+				this.foldWorkflowEvent(event.type, event.payload as WorkflowEvent);
 				break;
 
-			// ── Task events ──────────────────────────────────────────────────────
+			// ── Tasks ────────────────────────────────────────────────────────────
 			case RuntimeEventType.TaskQueued:
 			case RuntimeEventType.TaskStarted:
 			case RuntimeEventType.TaskCompleted:
 			case RuntimeEventType.TaskFailed:
 			case RuntimeEventType.TaskCancelled:
-				this.handleTaskEvent(event.type, event.payload as TaskEvent);
+				this.foldTaskEvent(event.type, event.payload as TaskEvent);
 				break;
 
-			// ── Memory events ────────────────────────────────────────────────────
+			// ── Memory ───────────────────────────────────────────────────────────
 			case RuntimeEventType.MemoryUpdated:
-			case RuntimeEventType.MemoryCleared:
 			case RuntimeEventType.KnowledgeIndexed:
-				this.handleMemoryEvent(event.type);
+				this.update({
+					memory: { ...this._state.memory, lastUpdatedAt: Date.now() },
+				});
+				break;
+			case RuntimeEventType.MemoryCleared:
+				this.update({ memory: buildInitialMemoryState() });
 				break;
 
-			// ── Log events ───────────────────────────────────────────────────────
+			// ── Logs ─────────────────────────────────────────────────────────────
 			case RuntimeEventType.Log:
-				this.appendLog((event.payload as LogEvent).message, 'info', (event.payload as LogEvent).source);
+				this.appendLog(
+					(event.payload as LogEvent).message,
+					'info',
+					(event.payload as LogEvent).source,
+				);
 				break;
-
 			case RuntimeEventType.Warning:
-				this.appendLog((event.payload as LogEvent).message, 'warning', (event.payload as LogEvent).source);
+				this.appendLog(
+					(event.payload as LogEvent).message,
+					'warning',
+					(event.payload as LogEvent).source,
+				);
 				break;
-
 			case RuntimeEventType.Error:
-				this.appendLog((event.payload as LogEvent).message, 'error', (event.payload as LogEvent).source);
+				this.appendLog(
+					(event.payload as LogEvent).message,
+					'error',
+					(event.payload as LogEvent).source,
+				);
 				break;
 
-			// ── Notification events ──────────────────────────────────────────────
+			// ── Notifications ────────────────────────────────────────────────────
 			case RuntimeEventType.Notification:
-				this.handleNotificationEvent(event.payload as NotificationEvent);
+				this.foldNotificationEvent(event.payload as NotificationEvent);
 				break;
 
-			// UI events (ViewChanged, PanelOpened, PanelClosed, SelectionChanged)
-			// do not mutate runtime state — they are consumed directly by views.
+			// UI-only events (ViewChanged, PanelOpened, PanelClosed,
+			// SelectionChanged) do not mutate state — consumed by views directly.
 			default:
 				break;
 		}
 	}
 
 	/*-------------------------------------------------------------------------------------------
-	 * Slice mutation helpers
+	 * Fold helpers — translate bus events into state mutations
 	 *------------------------------------------------------------------------------------------*/
 
-	private handleAgentEvent(type: RuntimeEventType, payload: AgentEvent): void {
+	private foldAgentEvent(type: RuntimeEventType, payload: AgentEvent): void {
 		if (type === RuntimeEventType.AgentUnregistered) {
-			// Remove agent from state.
 			const agents = { ...this._state.agents };
 			delete agents[payload.id];
-			this.update({ agents });
+			this.updateAgents(agents);
 			return;
 		}
 
 		const existing = this._state.agents[payload.id];
-		const updatedSummary = {
-			id: payload.id,
-			name: payload.name,
-			role: existing?.summary.role ?? '',
-			status: payload.status,
-		};
-
-		this.update({
-			agents: {
-				...this._state.agents,
-				[payload.id]: {
-					summary: updatedSummary,
-					metrics: existing?.metrics,
-					queue: existing?.queue,
+		this.updateAgents({
+			...this._state.agents,
+			[payload.id]: {
+				summary: {
+					id: payload.id,
+					name: payload.name,
+					role: existing?.summary.role ?? '',
+					status: payload.status,
 				},
+				metrics: existing?.metrics,
+				queue: existing?.queue,
 			},
 		});
 	}
 
-	private handleProviderEvent(type: RuntimeEventType, payload: ProviderEvent): void {
+	private foldProviderEvent(type: RuntimeEventType, payload: ProviderEvent): void {
 		if (type === RuntimeEventType.ProviderRemoved) {
-			// Find provider by name and remove it.
 			const providers = { ...this._state.providers };
-			const keyToRemove = Object.keys(providers).find(
+			const key = Object.keys(providers).find(
 				k => providers[k].summary.name === payload.name
 			);
-			if (keyToRemove) {
-				delete providers[keyToRemove];
-				this.update({ providers });
+			if (key) {
+				delete providers[key];
+				this.updateProviders(providers);
 			}
 			return;
 		}
 
-		// For all other provider events find the provider by name (the event only
-		// carries name, not id) and patch its summary.  If unknown, synthesise a
-		// minimal summary from the event payload — a full refresh will follow on
-		// the next syncProvidersFromBackend() call.
-		const existingEntry = Object.values(this._state.providers).find(
+		const existing = Object.values(this._state.providers).find(
 			p => p.summary.name === payload.name
 		);
-
-		const existingSummary = existingEntry?.summary ?? {
+		const base = existing?.summary ?? {
 			id: payload.name,
 			name: payload.name,
 			type: 'unknown',
 			healthy: false,
 			status: payload.status,
 			message: '',
-			models: [],
+			models: [] as readonly string[],
 			activeModel: payload.model,
 		};
 
-		const updatedSummary = {
-			...existingSummary,
+		const updated = {
+			...base,
 			status: payload.status,
-			healthy: payload.healthy ?? existingSummary.healthy,
-			activeModel: payload.model ?? existingSummary.activeModel,
+			healthy: payload.healthy ?? base.healthy,
+			activeModel: payload.model ?? base.activeModel,
 		};
 
-		this.update({
-			providers: {
-				...this._state.providers,
-				[updatedSummary.id]: {
-					summary: updatedSummary,
-					lastCheckedAt: Date.now(),
-				},
+		this.updateProviders({
+			...this._state.providers,
+			[updated.id]: {
+				summary: updated,
+				lastCheckedAt: Date.now(),
 			},
 		});
 	}
 
-	private handleWorkflowEvent(type: RuntimeEventType, payload: WorkflowEvent): void {
+	private foldWorkflowEvent(type: RuntimeEventType, payload: WorkflowEvent): void {
 		const existing = this._state.workflows[payload.id];
 		const now = Date.now();
-
-		const workflowState = this.workflowEventTypeToState(type);
+		const state = this.workflowEventToState(type);
 
 		const updated: IWorkflowState = {
 			id: payload.id,
 			name: payload.name,
-			state: workflowState,
+			state,
 			createdAt: type === RuntimeEventType.WorkflowCreated
 				? now
 				: (existing?.createdAt ?? now),
@@ -521,15 +642,10 @@ export class RuntimeStateService extends Disposable implements IRuntimeStateServ
 			) ? now : existing?.completedAt,
 		};
 
-		this.update({
-			workflows: {
-				...this._state.workflows,
-				[payload.id]: updated,
-			},
-		});
+		this.updateWorkflows({ [payload.id]: updated });
 	}
 
-	private workflowEventTypeToState(type: RuntimeEventType): IWorkflowState['state'] {
+	private workflowEventToState(type: RuntimeEventType): IWorkflowState['state'] {
 		switch (type) {
 			case RuntimeEventType.WorkflowCreated:   return 'created';
 			case RuntimeEventType.WorkflowStarted:   return 'running';
@@ -541,19 +657,16 @@ export class RuntimeStateService extends Disposable implements IRuntimeStateServ
 		}
 	}
 
-	private handleTaskEvent(type: RuntimeEventType, payload: TaskEvent): void {
+	private foldTaskEvent(type: RuntimeEventType, payload: TaskEvent): void {
 		const existing = this._state.tasks[payload.id];
 		const now = Date.now();
-
-		const taskState = this.taskEventTypeToState(type);
+		const state = this.taskEventToState(type);
 
 		const updated: ITaskState = {
 			id: payload.id,
 			title: payload.title,
-			// agentId is not carried on TaskEvent; preserve existing or use placeholder
-			// — the AgentCoordinator / Dispatcher will write a richer record later.
 			agentId: existing?.agentId ?? '',
-			state: taskState,
+			state,
 			createdAt: type === RuntimeEventType.TaskQueued
 				? now
 				: (existing?.createdAt ?? now),
@@ -570,15 +683,10 @@ export class RuntimeStateService extends Disposable implements IRuntimeStateServ
 				: undefined,
 		};
 
-		this.update({
-			tasks: {
-				...this._state.tasks,
-				[payload.id]: updated,
-			},
-		});
+		this.updateTasks({ [payload.id]: updated });
 	}
 
-	private taskEventTypeToState(type: RuntimeEventType): ITaskState['state'] {
+	private taskEventToState(type: RuntimeEventType): ITaskState['state'] {
 		switch (type) {
 			case RuntimeEventType.TaskQueued:    return 'queued';
 			case RuntimeEventType.TaskStarted:   return 'running';
@@ -589,43 +697,7 @@ export class RuntimeStateService extends Disposable implements IRuntimeStateServ
 		}
 	}
 
-	private handleMemoryEvent(type: RuntimeEventType): void {
-		if (type === RuntimeEventType.MemoryCleared) {
-			this.update({ memory: buildInitialMemoryState() });
-			return;
-		}
-		// MemoryUpdated / KnowledgeIndexed — bump lastUpdatedAt; a richer
-		// MemoryManager (Phase 3) will push full IMemoryEntry arrays into state.
-		this.update({
-			memory: {
-				...this._state.memory,
-				lastUpdatedAt: Date.now(),
-			},
-		});
-	}
-
-	private appendLog(
-		message: string,
-		level: ILogEntry['level'],
-		source: string | undefined,
-	): void {
-		const entry: ILogEntry = {
-			id: `log-${++this._serial}`,
-			level,
-			message,
-			source,
-			timestamp: Date.now(),
-		};
-
-		// Ring buffer — drop oldest entries beyond the cap.
-		const logs = this._state.logs.length < MAX_LOG_ENTRIES
-			? [...this._state.logs, entry]
-			: [...this._state.logs.slice(this._state.logs.length - MAX_LOG_ENTRIES + 1), entry];
-
-		this.update({ logs });
-	}
-
-	private handleNotificationEvent(payload: NotificationEvent): void {
+	private foldNotificationEvent(payload: NotificationEvent): void {
 		const id = `notif-${++this._serial}`;
 		const notification: INotificationState = {
 			id,
@@ -640,13 +712,11 @@ export class RuntimeStateService extends Disposable implements IRuntimeStateServ
 			[id]: notification,
 		};
 
-		// Evict oldest dismissed notifications when we exceed the cap.
 		const keys = Object.keys(notifications);
 		if (keys.length > MAX_NOTIFICATIONS) {
 			const dismissed = keys
 				.filter(k => notifications[k].dismissed)
 				.sort((a, b) => notifications[a].timestamp - notifications[b].timestamp);
-
 			const toEvict = dismissed.slice(0, keys.length - MAX_NOTIFICATIONS);
 			notifications = { ...notifications };
 			for (const k of toEvict) {
@@ -655,18 +725,5 @@ export class RuntimeStateService extends Disposable implements IRuntimeStateServ
 		}
 
 		this.update({ notifications });
-	}
-
-	/*-------------------------------------------------------------------------------------------
-	 * Memory state helpers exposed for MemoryManager (Phase 3)
-	 *
-	 * These are intentionally package-private (no interface method) — Phase 3
-	 * MemoryManager will call update() directly with a full IMemoryState patch
-	 * once it is wired in, so no extra API surface is needed here.
-	 *------------------------------------------------------------------------------------------*/
-
-	/** @internal Used only for testing. */
-	public _buildInitialState(): IRuntimeState {
-		return buildInitialState();
 	}
 }

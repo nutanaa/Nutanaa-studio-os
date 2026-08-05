@@ -19,23 +19,23 @@ export const IRuntimeStateService = createDecorator<IRuntimeStateService>('runti
 /*---------------------------------------------------------------------------------------------
  * State slice types
  *
- * Each slice is a plain, readonly value object. RuntimeStateService holds
- * one IRuntimeState and replaces slices immutably on every update so that
- * consumers can do strict-equality diffing.
+ * Every slice is a plain readonly value object. The service holds a single
+ * IRuntimeState and replaces slices immutably on every write so that
+ * subscribers can use strict-equality diffing.
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * Connection slice — mirrors NutanaaRuntimeConnectionState plus metadata.
+ * Connection slice — mirrors NutanaaRuntimeConnectionState plus audit metadata.
  */
 export interface IConnectionState {
 	readonly status: NutanaaRuntimeConnectionState;
-	/** ISO-8601 timestamp of the last successful connection. */
+	/** Unix ms timestamp of the most recent successful connection. */
 	readonly lastConnectedAt: number | undefined;
-	/** ISO-8601 timestamp of the last error. */
+	/** Unix ms timestamp of the most recent connection error. */
 	readonly lastErrorAt: number | undefined;
-	/** Human-readable reason for the last error, if any. */
+	/** Human-readable reason for the most recent error, if any. */
 	readonly lastErrorMessage: string | undefined;
-	/** Total number of reconnect attempts since startup. */
+	/** Total reconnect attempts since startup. */
 	readonly reconnectAttempts: number;
 }
 
@@ -43,13 +43,14 @@ export interface IConnectionState {
  * Per-agent runtime state as seen by the editor.
  *
  * Agents arrive from two sources:
- *  - the backend `/agents` endpoint   → populates `summary`
- *  - AgentCoordinator / AgentEventBus → populates `metrics` and `queue`
+ *   - the backend `/agents` endpoint   → populates `summary`
+ *   - AgentCoordinator / bus events    → also updates `summary.status`
+ *   - Phase 2 AgentDispatcher          → populates `metrics` and `queue`
  */
 export interface IRuntimeAgentState {
 	/** Raw summary as reported by the Nutanaa Runtime backend. */
 	readonly summary: INutanaaAgentSummary;
-	/** Live metrics for this agent, if available. */
+	/** Live per-agent metrics, if available. */
 	readonly metrics: IAgentMetrics | undefined;
 	/** Queue snapshot for this agent, if available. */
 	readonly queue: IAgentQueueStatus | undefined;
@@ -60,18 +61,17 @@ export interface IRuntimeAgentState {
  */
 export interface IProviderState {
 	readonly summary: INutanaaProviderSummary;
-	/** Monotonic timestamp of the last health probe. */
+	/** Unix ms timestamp of the last health probe. */
 	readonly lastCheckedAt: number;
 }
 
 /**
- * Task slice — a lightweight projection used by the Task Explorer view.
+ * Task slice — lightweight projection used by the Task Explorer view.
  */
 export interface ITaskState {
 	readonly id: string;
 	readonly title: string;
 	readonly agentId: string;
-	/** Maps to TaskEvent.state from runtimeEvent.ts */
 	readonly state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 	readonly createdAt: number;
 	readonly startedAt: number | undefined;
@@ -80,12 +80,11 @@ export interface ITaskState {
 }
 
 /**
- * Workflow slice — a lightweight projection used by the Workflow Explorer view.
+ * Workflow slice — lightweight projection used by the Workflow Explorer view.
  */
 export interface IWorkflowState {
 	readonly id: string;
 	readonly name: string;
-	/** Maps to WorkflowEvent.state from runtimeEvent.ts */
 	readonly state: 'created' | 'running' | 'completed' | 'failed' | 'cancelled';
 	readonly createdAt: number;
 	readonly startedAt: number | undefined;
@@ -93,7 +92,7 @@ export interface IWorkflowState {
 }
 
 /**
- * A single structured log entry.
+ * A single structured log entry held in the ring buffer.
  */
 export interface ILogEntry {
 	readonly id: string;
@@ -104,21 +103,22 @@ export interface ILogEntry {
 }
 
 /**
- * Memory slice — summary of what is currently indexed per memory type.
+ * Memory slice — summary of what is currently indexed per type.
+ * Phase 3 MemoryManager will write richer data via updateMemory().
  */
 export interface IMemoryState {
 	/** Total number of entries across all memory types. */
 	readonly totalEntries: number;
 	/** Count breakdown by memory type. */
 	readonly countByType: Readonly<Record<MemoryType, number>>;
-	/** Most recently updated entries, capped at MAX_RECENT_MEMORY_ENTRIES. */
+	/** Most recently updated entries (capped at 50). */
 	readonly recentEntries: readonly IMemoryEntry[];
-	/** ISO timestamp of the last memory write. */
+	/** Unix ms timestamp of the last memory write. */
 	readonly lastUpdatedAt: number | undefined;
 }
 
 /**
- * A notification shown in the notification centre / Agent Monitor.
+ * A notification held in the notification centre / Agent Monitor panel.
  */
 export interface INotificationState {
 	readonly id: string;
@@ -138,13 +138,13 @@ export interface IMetricsState {
 }
 
 /**
- * A Nutanaa session (conversation / task context).
+ * A Nutanaa session (conversation / task execution context).
  */
 export interface ISessionState {
 	readonly id: string;
 	readonly agentId: string;
 	readonly startedAt: number;
-	/** Context entries stored by key. */
+	/** Arbitrary context entries stored by key. */
 	readonly context: Readonly<Record<string, unknown>>;
 	readonly active: boolean;
 }
@@ -156,10 +156,11 @@ export interface ISessionState {
 /**
  * The single source of truth for all Nutanaa runtime data inside the editor.
  *
- * Architecture constraint:
+ * Architecture law:
  *   Views → IRuntimeStateService → IRuntimeCoordinator → Dispatcher → Backend
  *
- * Views must NEVER read from INutanaaRuntimeConnectionService directly.
+ * No view, panel, or downstream service may hold its own cached copy of
+ * runtime data. Everything is read exclusively through IRuntimeStateService.
  */
 export interface IRuntimeState {
 	readonly connection: IConnectionState;
@@ -171,7 +172,7 @@ export interface IRuntimeState {
 	readonly tasks: Readonly<Record<string, ITaskState>>;
 	/** Workflows keyed by workflow id. */
 	readonly workflows: Readonly<Record<string, IWorkflowState>>;
-	/** Ordered log ring-buffer (newest last). */
+	/** Ordered log ring-buffer, newest last (max 2 000 entries). */
 	readonly logs: readonly ILogEntry[];
 	readonly memory: IMemoryState;
 	/** Notifications keyed by notification id. */
@@ -187,6 +188,7 @@ export interface IRuntimeState {
 
 /**
  * An immutable, timestamped copy of IRuntimeState.
+ * Useful for the Timeline view, diagnostics, and export.
  */
 export interface IRuntimeStateSnapshot {
 	readonly timestamp: number;
@@ -194,62 +196,171 @@ export interface IRuntimeStateSnapshot {
 }
 
 /*---------------------------------------------------------------------------------------------
- * Partial update type
- *
- * Callers pass a Partial<IRuntimeState> to update(). The service merges it
- * into the current state and fires onDidChangeState with the new snapshot.
- * Slice keys that are omitted are left unchanged.
+ * Granular update argument types
  *--------------------------------------------------------------------------------------------*/
 
-export type RuntimeStateUpdate = Partial<IRuntimeState>;
+/** Argument for updateConnection(). */
+export type ConnectionUpdate = Partial<IConnectionState>;
+
+/** Argument for updateAgents() — keyed by agent id. */
+export type AgentUpdate = Readonly<Record<string, IRuntimeAgentState>>;
+
+/** Argument for updateProviders() — keyed by provider id. */
+export type ProviderUpdate = Readonly<Record<string, IProviderState>>;
+
+/** Argument for updateTasks() — keyed by task id. */
+export type TaskUpdate = Readonly<Record<string, ITaskState>>;
+
+/** Argument for updateWorkflows() — keyed by workflow id. */
+export type WorkflowUpdate = Readonly<Record<string, IWorkflowState>>;
+
+/** Argument for updateMetrics(). */
+export type MetricsUpdate = Partial<IMetricsState>;
 
 /*---------------------------------------------------------------------------------------------
  * IRuntimeStateService
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * The single source of truth for runtime state.
+ * The single source of truth for all Nutanaa runtime state.
  *
- * All views and commands must read state exclusively through this service.
- * State is written only by RuntimeStateService itself in response to
- * RuntimeEventBus events forwarded by RuntimeCoordinator.
+ * ── Reads ──────────────────────────────────────────────────────────────────
+ *   getState()   — synchronous snapshot of current state
+ *   snapshot()   — timestamped, immutable copy
+ *
+ * ── Granular writes ────────────────────────────────────────────────────────
+ *   updateConnection()
+ *   updateAgents()
+ *   updateProviders()
+ *   updateTasks()
+ *   updateWorkflows()
+ *   appendLog()
+ *   clearLogs()
+ *   updateMetrics()
+ *   reset()
+ *
+ * ── Granular change events ─────────────────────────────────────────────────
+ *   onDidChangeState      — fires on every mutation (full state)
+ *   onConnectionChanged   — fires only when the connection slice changes
+ *   onAgentsChanged       — fires only when the agents map changes
+ *   onProvidersChanged    — fires only when the providers map changes
+ *   onTasksChanged        — fires only when the tasks map changes
+ *   onWorkflowsChanged    — fires only when the workflows map changes
+ *   onLogsChanged         — fires only when the log buffer changes
+ *
+ * ── Internal low-level write ───────────────────────────────────────────────
+ *   update()   — merges a Partial<IRuntimeState> and fires all relevant events.
+ *                Used internally by RuntimeStateService; RuntimeCoordinator
+ *                should call the named methods above, not update() directly.
  */
 export interface IRuntimeStateService {
 
 	readonly _serviceBrand: undefined;
 
-	/**
-	 * Fired after every state mutation.
-	 * Subscribers receive the complete new state; they may diff against a
-	 * locally cached copy if they need to know which slice changed.
-	 */
+	// ── Change events ──────────────────────────────────────────────────────
+
+	/** Fired after every state mutation with the complete new state. */
 	readonly onDidChangeState: Event<IRuntimeState>;
 
+	/** Fired when the connection slice changes. */
+	readonly onConnectionChanged: Event<IConnectionState>;
+
+	/** Fired when the agents map changes. */
+	readonly onAgentsChanged: Event<Readonly<Record<string, IRuntimeAgentState>>>;
+
+	/** Fired when the providers map changes. */
+	readonly onProvidersChanged: Event<Readonly<Record<string, IProviderState>>>;
+
+	/** Fired when the tasks map changes. */
+	readonly onTasksChanged: Event<Readonly<Record<string, ITaskState>>>;
+
+	/** Fired when the workflows map changes. */
+	readonly onWorkflowsChanged: Event<Readonly<Record<string, IWorkflowState>>>;
+
+	/** Fired when the log ring-buffer changes. */
+	readonly onLogsChanged: Event<readonly ILogEntry[]>;
+
+	// ── Reads ──────────────────────────────────────────────────────────────
+
 	/**
-	 * Returns the current (latest) state object.
-	 * The returned reference is frozen and must not be mutated by callers.
+	 * Returns the current state. The returned object is immutable and must
+	 * not be mutated by callers.
 	 */
 	getState(): IRuntimeState;
 
 	/**
-	 * Merge `update` into the current state and fire `onDidChangeState`.
-	 *
-	 * RuntimeStateService is the ONLY writer. No other service or view
-	 * should call this method.
-	 *
-	 * @internal Called by RuntimeStateService in response to bus events.
-	 */
-	update(update: RuntimeStateUpdate): void;
-
-	/**
-	 * Reset all state slices to their initial empty values and fire
-	 * `onDidChangeState`. Typically called on runtime disconnect.
-	 */
-	clear(): void;
-
-	/**
-	 * Return an immutable timestamped snapshot of the current state.
-	 * Useful for diagnostics, logging, and timeline recording.
+	 * Returns an immutable timestamped copy of the current state.
 	 */
 	snapshot(): IRuntimeStateSnapshot;
+
+	// ── Named writes ───────────────────────────────────────────────────────
+
+	/**
+	 * Merge `patch` into the connection slice and fire onConnectionChanged
+	 * (and onDidChangeState).
+	 */
+	updateConnection(patch: ConnectionUpdate): void;
+
+	/**
+	 * Replace the agents map with `agents` and fire onAgentsChanged
+	 * (and onDidChangeState).
+	 */
+	updateAgents(agents: AgentUpdate): void;
+
+	/**
+	 * Replace the providers map with `providers` and fire onProvidersChanged
+	 * (and onDidChangeState).
+	 */
+	updateProviders(providers: ProviderUpdate): void;
+
+	/**
+	 * Merge `tasks` into the current tasks map (upsert semantics) and fire
+	 * onTasksChanged (and onDidChangeState).
+	 */
+	updateTasks(tasks: TaskUpdate): void;
+
+	/**
+	 * Merge `workflows` into the current workflows map (upsert semantics)
+	 * and fire onWorkflowsChanged (and onDidChangeState).
+	 */
+	updateWorkflows(workflows: WorkflowUpdate): void;
+
+	/**
+	 * Append a single entry to the log ring-buffer and fire onLogsChanged
+	 * (and onDidChangeState).
+	 *
+	 * The ring-buffer silently drops the oldest entry once it reaches the
+	 * 2 000-entry cap.
+	 */
+	appendLog(
+		message: string,
+		level: ILogEntry['level'],
+		source?: string,
+	): void;
+
+	/**
+	 * Empty the log ring-buffer and fire onLogsChanged (and onDidChangeState).
+	 */
+	clearLogs(): void;
+
+	/**
+	 * Merge `patch` into the metrics slice and fire onDidChangeState.
+	 */
+	updateMetrics(patch: MetricsUpdate): void;
+
+	/**
+	 * Reset all slices to their initial empty values and fire onDidChangeState.
+	 * Typically called on runtime disconnect.
+	 */
+	reset(): void;
+
+	// ── Low-level write (internal) ─────────────────────────────────────────
+
+	/**
+	 * Merge a `Partial<IRuntimeState>` patch and fire all relevant events.
+	 *
+	 * @internal RuntimeStateService uses this internally. RuntimeCoordinator
+	 * must call the named methods above instead.
+	 */
+	update(patch: Partial<IRuntimeState>): void;
 }
