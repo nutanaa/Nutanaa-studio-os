@@ -61,14 +61,20 @@ from runtime.providers import (
     ProviderStream,
     ProviderType,
 )
+from runtime.kernel import RuntimeKernel
 from runtime.services import (
+    ConfigurationManager,
+    HealthMonitor,
     RuntimeDiagnostics,
     RuntimeHealth,
     RuntimeMetrics,
+    Scheduler,
     ServiceContainer,
     ServiceRegistry,
     ShutdownHooks,
     StartupHooks,
+    StateStore,
+    TelemetryService,
 )
 from runtime.state.project_state import (
     ProjectState,
@@ -130,6 +136,7 @@ __all__ = [
     "ProviderStream",
     "ProviderType",
     "RuntimeContext",
+    "RuntimeKernel",
     "RuntimeDiagnostics",
     "RuntimeHealth",
     "RuntimeMetrics",

@@ -71,6 +71,20 @@ class EventBus:
             if not handlers:
                 self._subscribers.pop(event_type, None)
 
+    def once(self, event_type: str, handler: EventHandler) -> None:
+        """Subscribe to an event type for a single delivery."""
+        if not event_type:
+            raise ValueError("event_type must not be empty.")
+        if not callable(handler):
+            raise TypeError("handler must be callable.")
+
+        def wrapper(event: Event) -> Any:
+            self.unsubscribe(event_type, wrapper)
+            return handler(event)
+
+        with self._lock:
+            self._subscribers[event_type].append(wrapper)
+
     def listener_count(self, event_type: str | None = None) -> int:
         """Return the number of registered listeners."""
         with self._lock:

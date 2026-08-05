@@ -43,4 +43,5 @@ class RuntimeContext:
     startup_hooks: StartupHooks
     shutdown_hooks: ShutdownHooks
     lifecycle: "LifecycleManager | None" = None
+    kernel: "RuntimeKernel | None" = None
     extra: dict[str, Any] = field(default_factory=dict)

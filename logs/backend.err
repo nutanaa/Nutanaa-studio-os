@@ -4,3 +4,46 @@ INFO:     Started reloader process [1360] using WatchFiles
 INFO:     Started server process [31564]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'runtime\services\configuration_manager.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [31564]
+WARNING:  WatchFiles detected changes in 'runtime\__init__.py', 'tests\unit\runtime\test_runtime_kernel.py', 'runtime\services\__init__.py', 'runtime\services\state_store.py', 'runtime\services\scheduler.py', 'runtime\services\health_monitor.py', 'runtime\services\configuration_manager.py', 'runtime\runtime_context.py', 'runtime\kernel.py', 'runtime\services\telemetry_service.py', 'runtime\bootstrap.py', 'runtime\events\event_bus.py'. Reloading...
+INFO:     Started server process [34348]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+ERROR:    Traceback (most recent call last):
+  File "C:\Users\purushotham\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\purushotham\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\purushotham\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\purushotham\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\asyncio\runners.py", line 123, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\purushotham\git\Nutanaa-studio-os\editor\venv\Lib\site-packages\starlette\routing.py", line 700, in lifespan
+    await receive()
+  File "C:\Users\purushotham\git\Nutanaa-studio-os\editor\venv\Lib\site-packages\uvicorn\lifespan\on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\purushotham\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\asyncio\queues.py", line 158, in get
+    await getter
+asyncio.exceptions.CancelledError
+
+INFO:     Started server process [12108]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.

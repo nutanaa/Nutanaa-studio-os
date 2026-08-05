@@ -100,12 +100,18 @@ def bootstrap(
     lifecycle = LifecycleManager(lifecycle_context)
     lifecycle_context.lifecycle = lifecycle
 
+    from runtime.kernel import RuntimeKernel
+
+    kernel = RuntimeKernel.create(lifecycle_context)
+    lifecycle_context.kernel = kernel
+
     container.register_instance("settings", settings)
     container.register_instance("provider_manager", provider_manager)
     container.register_instance("agent_manager", agent_manager)
     container.register_instance("workflow_manager", workflow_manager)
     container.register_instance("plugin_manager", plugin_manager)
     container.register_instance("runtime_context", lifecycle_context)
+    container.register_instance("runtime_kernel", kernel)
 
     dependencies.register_instance(RuntimeSettings, settings)
 
