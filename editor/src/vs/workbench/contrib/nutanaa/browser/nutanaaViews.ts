@@ -39,6 +39,18 @@ import { ProjectExplorerDataProvider } from './projectExplorerDataProvider.js';
 import { nutanaaRefreshIcon } from './nutanaaIcons.js';
 import { NutanaaViewId } from './constants.js';
 
+// Phase 4 Studio Views
+import { ChatView } from './views/chatView.js';
+import { AgentMonitorView } from './views/agentMonitorView.js';
+import { WorkflowDesignerView } from './views/workflowDesignerView.js';
+import { TimelineView } from './views/timelineView.js';
+import { LogsView } from './views/logsView.js';
+import { DashboardView } from './views/dashboardView.js';
+import { ProviderExplorerView } from './views/providerExplorerView.js';
+import { MemoryExplorerView } from './views/memoryExplorerView.js';
+import { ToolExplorerView } from './views/toolExplorerView.js';
+import { NotificationsView } from './views/notificationsView.js';
+
 export class NutanaaViews extends Disposable {
 
 	constructor(
@@ -64,6 +76,18 @@ export class NutanaaViews extends Disposable {
 		this.registerEventsView(container);
 		this.registerWelcomeDashboard(container);
 		this.registerProjectExplorerView(container);
+
+		// Phase 4 Studio Views
+		this.registerDashboardView(container);
+		this.registerChatViewNew(container);
+		this.registerAgentMonitorView(container);
+		this.registerWorkflowDesignerView(container);
+		this.registerTimelineView(container);
+		this.registerLogsNewView(container);
+		this.registerProviderExplorerNewView(container);
+		this.registerMemoryExplorerNewView(container);
+		this.registerToolExplorerView(container);
+		this.registerNotificationsView(container);
 	}
 
 	// ── Agent Explorer ─────────────────────────────────────────────────────
@@ -378,5 +402,147 @@ export class NutanaaViews extends Disposable {
 			order: 109,
 		};
 		viewsRegistry.registerViews([descriptor], container);
+	}
+
+	// ── Phase 4 Studio Views ─────────────────────────────────────────────────
+
+	private registerDashboardView(container: ViewContainer): void {
+		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
+
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.dashboard',
+			name: localize2('nutanaa.dashboard.title', 'Dashboard'),
+			ctorDescriptor: new SyncDescriptor(DashboardView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 200,
+		}], container);
+	}
+
+	private registerChatViewNew(container: ViewContainer): void {
+		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
+
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.chat',
+			name: localize2('nutanaa.chat.title', 'AI Chat'),
+			ctorDescriptor: new SyncDescriptor(ChatView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 201,
+		}], container);
+	}
+
+	private registerAgentMonitorView(container: ViewContainer): void {
+		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
+
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.agents',
+			name: localize2('nutanaa.agents.title', 'Agent Monitor'),
+			ctorDescriptor: new SyncDescriptor(AgentMonitorView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 202,
+		}], container);
+	}
+
+	private registerWorkflowDesignerView(container: ViewContainer): void {
+		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
+
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.workflows',
+			name: localize2('nutanaa.workflows.title', 'Workflow Designer'),
+			ctorDescriptor: new SyncDescriptor(WorkflowDesignerView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 203,
+		}], container);
+	}
+
+	private registerTimelineView(container: ViewContainer): void {
+		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
+
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.timeline',
+			name: localize2('nutanaa.timeline.title', 'Timeline'),
+			ctorDescriptor: new SyncDescriptor(TimelineView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 204,
+		}], container);
+	}
+
+	private registerLogsNewView(container: ViewContainer): void {
+		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
+
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.logs',
+			name: localize2('nutanaa.logs.title', 'Logs'),
+			ctorDescriptor: new SyncDescriptor(LogsView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 205,
+		}], container);
+	}
+
+	private registerProviderExplorerNewView(container: ViewContainer): void {
+		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
+
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.providers',
+			name: localize2('nutanaa.providers.title', 'Providers'),
+			ctorDescriptor: new SyncDescriptor(ProviderExplorerView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 206,
+		}], container);
+	}
+
+	private registerMemoryExplorerNewView(container: ViewContainer): void {
+		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
+
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.memory',
+			name: localize2('nutanaa.memory.title', 'Memory'),
+			ctorDescriptor: new SyncDescriptor(MemoryExplorerView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 207,
+		}], container);
+	}
+
+	private registerToolExplorerView(container: ViewContainer): void {
+		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
+
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.tools',
+			name: localize2('nutanaa.tools.title', 'Tools'),
+			ctorDescriptor: new SyncDescriptor(ToolExplorerView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 208,
+		}], container);
+	}
+
+	private registerNotificationsView(container: ViewContainer): void {
+		const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
+
+		viewsRegistry.registerViews([{
+			id: 'workbench.contrib.nutanaa.notifications',
+			name: localize2('nutanaa.notifications.title', 'Notifications'),
+			ctorDescriptor: new SyncDescriptor(NotificationsView),
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			order: 209,
+		}], container);
 	}
 }
