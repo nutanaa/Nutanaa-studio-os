@@ -21,44 +21,44 @@ import {
 	WorkbenchPhase,
 } from '../../../common/contributions.js';
 
+// ── Phase 1 services ──────────────────────────────────────────────────────────
+
 import {
 	INutanaaRuntimeConnectionService,
-	NUTANAA_VIEW_CONTAINER_ID
+	NUTANAA_VIEW_CONTAINER_ID,
 } from '../common/nutanaa.js';
-
 import { NutanaaRuntimeConnectionService } from './nutanaaRuntimeConnectionService.js';
+
+import { IRuntimeEventBus, RuntimeEventBus } from '../common/runtimeEventBus.js';
+import { IRuntimeStateService } from '../common/runtimeState.js';
+import { RuntimeStateService } from './runtimeStateService.js';
+
+// ── Phase 2 services ──────────────────────────────────────────────────────────
+
+import { IAgentCoordinator, AgentCoordinator } from '../common/agentCoordinator.js';
+import { ITaskScheduler } from '../common/taskScheduler.js';
+import { TaskScheduler } from './taskScheduler.js';
+import { IWorkflowEngine } from '../common/workflowEngine.js';
+import { WorkflowEngine } from './workflowEngine.js';
+import { IAgentDispatcher, AgentDispatcher } from '../services/agentDispatcher.js';
+
+// ── Runtime coordinator ───────────────────────────────────────────────────────
+
+import { IRuntimeCoordinator } from '../common/runtimeCoordinator.js';
+import { RuntimeCoordinator } from './runtimeCoordinator.js';
+
+// ── Views ─────────────────────────────────────────────────────────────────────
+
 import { NutanaaViews } from './nutanaaViews.js';
 import { nutanaaViewIcon } from './nutanaaIcons.js';
 
-import {
-	IRuntimeEventBus,
-	RuntimeEventBus
-} from '../common/runtimeEventBus.js';
-
-import {
-	IAgentCoordinator,
-	AgentCoordinator
-} from '../common/agentCoordinator.js';
-
-import {
-	IRuntimeCoordinator
-} from '../common/runtimeCoordinator.js';
-
-import {
-	RuntimeCoordinator
-} from './runtimeCoordinator.js';
-
-import {
-	IRuntimeStateService
-} from '../common/runtimeState.js';
-
-import {
-	RuntimeStateService
-} from './runtimeStateService.js';
-
 /*---------------------------------------------------------------------------------------------
  * Service Registration
+ * Registration order matters: services with no constructor dependencies first;
+ * services that inject others after their dependencies.
  *--------------------------------------------------------------------------------------------*/
+
+// ── Phase 1 ───────────────────────────────────────────────────────────────────
 
 registerSingleton(
 	INutanaaRuntimeConnectionService,
@@ -73,20 +73,46 @@ registerSingleton(
 );
 
 registerSingleton(
+	IRuntimeStateService,
+	RuntimeStateService,
+	InstantiationType.Delayed
+);
+
+// ── Phase 2 ───────────────────────────────────────────────────────────────────
+
+// AgentCoordinator has no injected service deps at construction time
+// (dispatcher is wired post-construction via setDispatcher()).
+registerSingleton(
 	IAgentCoordinator,
 	AgentCoordinator,
 	InstantiationType.Delayed
 );
 
+// AgentDispatcher injects: IRuntimeEventBus, IRuntimeStateService, ILogService.
 registerSingleton(
-	IRuntimeCoordinator,
-	RuntimeCoordinator,
+	IAgentDispatcher,
+	AgentDispatcher,
 	InstantiationType.Delayed
 );
 
+// TaskScheduler injects: IAgentCoordinator, IRuntimeEventBus, IRuntimeStateService, ILogService.
 registerSingleton(
-	IRuntimeStateService,
-	RuntimeStateService,
+	ITaskScheduler,
+	TaskScheduler,
+	InstantiationType.Delayed
+);
+
+// WorkflowEngine injects: IAgentCoordinator, IRuntimeEventBus, IRuntimeStateService, ILogService.
+registerSingleton(
+	IWorkflowEngine,
+	WorkflowEngine,
+	InstantiationType.Delayed
+);
+
+// RuntimeCoordinator injects all Phase 2 services + wires the dispatcher.
+registerSingleton(
+	IRuntimeCoordinator,
+	RuntimeCoordinator,
 	InstantiationType.Delayed
 );
 
@@ -105,24 +131,19 @@ const NUTANAA_VIEW_CONTAINER = Registry
 				ViewPaneContainer,
 				[
 					NUTANAA_VIEW_CONTAINER_ID,
-					{
-						mergeViewWithContainerWhenSingleView: true
-					}
+					{ mergeViewWithContainerWhenSingleView: true },
 				]
 			),
 			openCommandActionDescriptor: {
 				id: NUTANAA_VIEW_CONTAINER_ID,
 				mnemonicTitle: localize(
-					{
-						key: 'miViewNutanaa',
-						comment: ['&& denotes a mnemonic']
-					},
+					{ key: 'miViewNutanaa', comment: ['&& denotes a mnemonic'] },
 					'&&Nutanaa'
 				),
-				order: 10
+				order: 10,
 			},
 			order: 10,
-			alwaysUseContainerInfo: true
+			alwaysUseContainerInfo: true,
 		},
 		ViewContainerLocation.Sidebar
 	);
@@ -134,47 +155,55 @@ const NUTANAA_VIEW_CONTAINER = Registry
 class NutanaaContribution extends Disposable implements IWorkbenchContribution {
 
 	constructor(
-		@IInstantiationService
-		instantiationService: IInstantiationService,
+		@IInstantiationService instantiationService: IInstantiationService,
 
+		// Phase 1 — transport + state (must be alive before views render)
 		@INutanaaRuntimeConnectionService
 		runtimeConnectionService: INutanaaRuntimeConnectionService,
 
 		@IRuntimeEventBus
-		runtimeEventBus: IRuntimeEventBus,
-
-		@IAgentCoordinator
-		agentCoordinator: IAgentCoordinator,
-
-		@IRuntimeCoordinator
-		runtimeCoordinator: IRuntimeCoordinator,
+		_runtimeEventBus: IRuntimeEventBus,
 
 		@IRuntimeStateService
 		_runtimeStateService: IRuntimeStateService,
+
+		// Phase 2 — execution engine
+		@IAgentCoordinator
+		_agentCoordinator: IAgentCoordinator,
+
+		@IAgentDispatcher
+		_agentDispatcher: IAgentDispatcher,
+
+		@ITaskScheduler
+		_taskScheduler: ITaskScheduler,
+
+		@IWorkflowEngine
+		_workflowEngine: IWorkflowEngine,
+
+		// Coordinator (constructs last; wires dispatcher inside its constructor)
+		@IRuntimeCoordinator
+		runtimeCoordinator: IRuntimeCoordinator,
 	) {
 		super();
 
-		// Force creation of all lazy singleton services.
-		// The DI container owns their lifetime.
-		void runtimeEventBus;
-		void agentCoordinator;
-		// IRuntimeStateService must be alive before any view renders so that
-		// the first onDidChangeState subscription is never missed.
+		// Force eager construction of every lazy singleton so subscribers
+		// never miss the first event. The DI container owns all lifetimes.
+		void _runtimeEventBus;
 		void _runtimeStateService;
+		void _agentCoordinator;
+		void _agentDispatcher;
+		void _taskScheduler;
+		void _workflowEngine;
 
-		// Create the Nutanaa sidebar and all registered views.
+		// Create the Nutanaa sidebar and all registered tree views.
 		this._register(
-			instantiationService.createInstance(
-				NutanaaViews,
-				NUTANAA_VIEW_CONTAINER
-			)
+			instantiationService.createInstance(NutanaaViews, NUTANAA_VIEW_CONTAINER)
 		);
 
-		// Start the runtime coordinator before connecting to the backend.
-		// This ensures it is ready to consume runtime events immediately.
+		// Start the coordinator (fires onRuntimeReady, wires dispatcher).
 		void runtimeCoordinator.start();
 
-		// Establish HTTP/WebSocket connection to the runtime.
+		// Establish HTTP + WebSocket connection to the Nutanaa Runtime backend.
 		void runtimeConnectionService.connect();
 	}
 }
