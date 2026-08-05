@@ -48,6 +48,14 @@ import {
 	RuntimeCoordinator
 } from './runtimeCoordinator.js';
 
+import {
+	IRuntimeStateService
+} from '../common/runtimeState.js';
+
+import {
+	RuntimeStateService
+} from './runtimeStateService.js';
+
 /*---------------------------------------------------------------------------------------------
  * Service Registration
  *--------------------------------------------------------------------------------------------*/
@@ -73,6 +81,12 @@ registerSingleton(
 registerSingleton(
 	IRuntimeCoordinator,
 	RuntimeCoordinator,
+	InstantiationType.Delayed
+);
+
+registerSingleton(
+	IRuntimeStateService,
+	RuntimeStateService,
 	InstantiationType.Delayed
 );
 
@@ -134,6 +148,9 @@ class NutanaaContribution extends Disposable implements IWorkbenchContribution {
 
 		@IRuntimeCoordinator
 		runtimeCoordinator: IRuntimeCoordinator,
+
+		@IRuntimeStateService
+		_runtimeStateService: IRuntimeStateService,
 	) {
 		super();
 
@@ -141,6 +158,9 @@ class NutanaaContribution extends Disposable implements IWorkbenchContribution {
 		// The DI container owns their lifetime.
 		void runtimeEventBus;
 		void agentCoordinator;
+		// IRuntimeStateService must be alive before any view renders so that
+		// the first onDidChangeState subscription is never missed.
+		void _runtimeStateService;
 
 		// Create the Nutanaa sidebar and all registered views.
 		this._register(

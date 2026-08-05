@@ -212,3 +212,9 @@ export interface NotificationEvent {
 
 	message: string;
 }
+
+/**
+ * Alias so that consumers that imported the I-prefixed name
+ * (`IRuntimeEvent`) continue to compile without changes.
+ */
+export type IRuntimeEvent<T = unknown> = RuntimeEvent<T>;
