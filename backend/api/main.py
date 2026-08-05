@@ -30,6 +30,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
+from uuid import uuid4
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,12 +38,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from runtime.agents.agent import CallableAgent
 from runtime.bootstrap import bootstrap
 from runtime.events.event_bus import Event
+from runtime.orchestration import ExecutionOrchestrator
 from runtime.providers.ollama_provider import OllamaProvider
 from runtime.runtime_context import RuntimeContext
+from runtime.services.state_store import StateStore
+from runtime.services.telemetry_service import TelemetryService
+from runtime.tasks.execution_request import ExecutionRequest
+from runtime.tasks.task_execution_engine import TaskExecutionEngine
 
 logger = logging.getLogger(__name__)
 
 _context: RuntimeContext | None = None
+_orchestrator: ExecutionOrchestrator | None = None
 
 
 def get_context() -> RuntimeContext:
@@ -55,6 +62,18 @@ def get_context() -> RuntimeContext:
 	if _context is None:
 		raise RuntimeError("Runtime context not initialized — startup hasn't run yet.")
 	return _context
+
+
+def get_orchestrator() -> ExecutionOrchestrator:
+	"""Return the process-wide `ExecutionOrchestrator`.
+
+	Constructed once in `lifespan`, not per-request — `TaskExecutionEngine`
+	carries a `StateStore` that's meant to persist state across requests,
+	so a fresh instance per call would silently lose that.
+	"""
+	if _orchestrator is None:
+		raise RuntimeError("Execution orchestrator not initialized — startup hasn't run yet.")
+	return _orchestrator
 
 
 @asynccontextmanager
@@ -88,6 +107,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 	chat_agent = CallableAgent(name="chat-assistant", execute_hook=_chat_execute)
 	_context.agent_manager.register("chat-assistant", chat_agent)
+
+	global _orchestrator
+	_orchestrator = ExecutionOrchestrator(
+		engine=TaskExecutionEngine(
+			provider_manager=_context.provider_manager,
+			agent_manager=_context.agent_manager,
+			event_bus=_context.event_bus,
+			state_store=StateStore(event_bus=_context.event_bus),
+			telemetry=TelemetryService(_context.event_bus),
+		)
+	)
 
 	assert _context.lifecycle is not None, "bootstrap() did not attach a lifecycle"
 	await _context.lifecycle.startup()
@@ -146,13 +176,24 @@ async def execute_agent(name: str, payload: dict) -> dict:
 	"""Execute a registered agent with a plain input payload, e.g.
 	{"input": "hello"}. Returns the agent's real output, or a real error
 	if the agent doesn't exist or execution fails (e.g. no healthy
-	provider) — never a canned response."""
-	context = get_context()
+	provider) — never a canned response.
+
+	Routes through `ExecutionOrchestrator`/`TaskExecutionEngine` rather
+	than calling `AgentManager.execute()` directly — this is now the one
+	call site for agent execution, per the "single entry point" goal.
+	Behavior is unchanged from before this was wired in: same agent
+	lookup, same input, same real success/failure result.
+	"""
+	orchestrator = get_orchestrator()
+	session_id = str(payload.get("sessionId") or uuid4().hex)
+	request = ExecutionRequest(agent_name=name, input_data=payload.get("input", ""))
 	try:
-		result = await context.agent_manager.execute(name, payload.get("input", ""))
+		_session, result = await orchestrator.execute(request, session_id=session_id)
 	except Exception as exc:  # noqa: BLE001 - surfaced to the caller, not swallowed
 		return {"success": False, "error": str(exc)}
-	return {"success": True, "output": result}
+	if result.error is not None:
+		return {"success": False, "error": result.error}
+	return {"success": True, "output": result.result}
 
 
 @app.get("/providers")
