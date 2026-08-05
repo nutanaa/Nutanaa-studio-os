@@ -69,6 +69,22 @@ import { IDistributedRuntimeManager, DistributedRuntimeManager } from '../common
 import { IOrganizationManager, OrganizationManager } from '../common/organizationManager.js';
 import { IAuditManager, AuditManager } from '../common/auditManager.js';
 
+// ── Phase 6 services ───────────────────────────────────────────────────────
+
+import { ITelemetryManager, TelemetryManager } from '../common/telemetryManager.js';
+import { IMetricsManager, MetricsManager } from '../common/metricsManager.js';
+import { ITracingManager, TracingManager } from '../common/tracingManager.js';
+import { ILoggingManager, LoggingManager } from '../common/loggingManager.js';
+import { IPerformanceManager, PerformanceManager } from '../common/performanceManager.js';
+import { ICacheManager, CacheManager } from '../common/cacheManager.js';
+import { IOfflineManager, OfflineManager } from '../common/offlineManager.js';
+import { IBackupManager, BackupManager } from '../common/backupManager.js';
+import { IRecoveryManager, RecoveryManager } from '../common/recoveryManager.js';
+import { IUpdateManager, UpdateManager } from '../common/updateManager.js';
+import { IPackagingManager, PackagingManager } from '../common/packagingManager.js';
+import { IConfigurationManager, ConfigurationManager } from '../common/configurationManager.js';
+import { IHealthManager, HealthManager } from '../common/healthManager.js';
+
 // ── Views ─────────────────────────────────────────────────────────────────────
 
 import { NutanaaViews } from './nutanaaViews.js';
@@ -254,6 +270,99 @@ registerSingleton(
 	InstantiationType.Delayed
 );
 
+// ── Phase 6 ───────────────────────────────────────────────────────────────────
+
+// TelemetryManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	ITelemetryManager,
+	TelemetryManager,
+	InstantiationType.Delayed
+);
+
+// MetricsManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	IMetricsManager,
+	MetricsManager,
+	InstantiationType.Delayed
+);
+
+// TracingManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	ITracingManager,
+	TracingManager,
+	InstantiationType.Delayed
+);
+
+// LoggingManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	ILoggingManager,
+	LoggingManager,
+	InstantiationType.Delayed
+);
+
+// PerformanceManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	IPerformanceManager,
+	PerformanceManager,
+	InstantiationType.Delayed
+);
+
+// CacheManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	ICacheManager,
+	CacheManager,
+	InstantiationType.Delayed
+);
+
+// OfflineManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	IOfflineManager,
+	OfflineManager,
+	InstantiationType.Delayed
+);
+
+// BackupManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	IBackupManager,
+	BackupManager,
+	InstantiationType.Delayed
+);
+
+// RecoveryManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	IRecoveryManager,
+	RecoveryManager,
+	InstantiationType.Delayed
+);
+
+// UpdateManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	IUpdateManager,
+	UpdateManager,
+	InstantiationType.Delayed
+);
+
+// PackagingManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	IPackagingManager,
+	PackagingManager,
+	InstantiationType.Delayed
+);
+
+// ConfigurationManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	IConfigurationManager,
+	ConfigurationManager,
+	InstantiationType.Delayed
+);
+
+// HealthManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	IHealthManager,
+	HealthManager,
+	InstantiationType.Delayed
+);
+
 /*---------------------------------------------------------------------------------------------
  * Sidebar Registration
  *--------------------------------------------------------------------------------------------*/
@@ -371,6 +480,46 @@ class NutanaaContribution extends Disposable implements IWorkbenchContribution {
 
 		@IAuditManager
 		_auditManager: IAuditManager,
+
+		// Phase 6 — Production Platform
+		@ITelemetryManager
+		_telemetryManager: ITelemetryManager,
+
+		@IMetricsManager
+		_metricsManager: IMetricsManager,
+
+		@ITracingManager
+		_tracingManager: ITracingManager,
+
+		@ILoggingManager
+		_loggingManager: ILoggingManager,
+
+		@IPerformanceManager
+		_performanceManager: IPerformanceManager,
+
+		@ICacheManager
+		_cacheManager: ICacheManager,
+
+		@IOfflineManager
+		_offlineManager: IOfflineManager,
+
+		@IBackupManager
+		_backupManager: IBackupManager,
+
+		@IRecoveryManager
+		_recoveryManager: IRecoveryManager,
+
+		@IUpdateManager
+		_updateManager: IUpdateManager,
+
+		@IPackagingManager
+		_packagingManager: IPackagingManager,
+
+		@IConfigurationManager
+		_configurationManager: IConfigurationManager,
+
+		@IHealthManager
+		_healthManager: IHealthManager,
 	) {
 		super();
 
@@ -389,6 +538,28 @@ class NutanaaContribution extends Disposable implements IWorkbenchContribution {
 		void _memoryManager;
 		void _embeddingManager;
 		void _toolManager;
+		void _authenticationManager;
+		void _authorizationManager;
+		void _secretsManager;
+		void _pluginManager;
+		void _marketplaceService;
+		void _remoteAgentManager;
+		void _distributedRuntimeManager;
+		void _organizationManager;
+		void _auditManager;
+		void _telemetryManager;
+		void _metricsManager;
+		void _tracingManager;
+		void _loggingManager;
+		void _performanceManager;
+		void _cacheManager;
+		void _offlineManager;
+		void _backupManager;
+		void _recoveryManager;
+		void _updateManager;
+		void _packagingManager;
+		void _configurationManager;
+		void _healthManager;
 
 		// Create the Nutanaa sidebar and all registered tree views.
 		this._register(

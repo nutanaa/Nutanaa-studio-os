@@ -12,6 +12,258 @@ import { IMemoryEntry, MemoryType } from '../models/memoryModel.js';
 import { IUser, IOrganization, IPlugin, IPluginListing, ISecret, INodeInfo, IPermission } from '../models/enterpriseModel.js';
 
 /*---------------------------------------------------------------------------------------------
+ * Phase 6 Production State Slices
+ *--------------------------------------------------------------------------------------------*/
+
+/**
+ * Production platform state for monitoring, caching, backup, and updates.
+ */
+export interface IProductionState {
+	/** Telemetry state */
+	readonly telemetry: {
+		enabled: boolean;
+		anonymous: boolean;
+		eventsCount: number;
+		sessionsCount: number;
+	};
+	/** Metrics state */
+	readonly metrics: {
+		cpu: number;
+		memory: number;
+		gpu: number;
+		disk: number;
+		network: number;
+		llmLatency: number;
+		toolLatency: number;
+		workflowLatency: number;
+		agentLatency: number;
+		tokenUsage: number;
+	};
+	/** Tracing state */
+	readonly tracing: {
+		enabled: boolean;
+		activeTraces: number;
+		sampleRate: number;
+	};
+	/** Logging state */
+	readonly logging: {
+		level: 'debug' | 'info' | 'warning' | 'error';
+		entriesCount: number;
+		retention: number;
+	};
+	/** Performance state */
+	readonly performance: {
+		startupTime: number;
+		renderTime: number;
+		slowTasks: number;
+		memoryUsage: number;
+		cpuUsage: number;
+	};
+	/** Cache state */
+	readonly cache: {
+		memorySize: number;
+		diskSize: number;
+		hitRate: number;
+		evictions: number;
+		embeddingCount: number;
+		promptCount: number;
+		toolCount: number;
+		httpCount: number;
+		providerCount: number;
+	};
+	/** Offline state */
+	readonly offline: {
+		enabled: boolean;
+		isOffline: boolean;
+		queuedRequests: number;
+		lastSyncTime: number;
+	};
+	/** Backup state */
+	readonly backup: {
+		enabled: boolean;
+		lastBackup: number | undefined;
+		backupCount: number;
+		totalSize: number;
+	};
+	/** Recovery state */
+	readonly recovery: {
+		lastRecovery: number | undefined;
+		recoveryCount: number;
+		pendingRecovery: boolean;
+	};
+	/** Update state */
+	readonly update: {
+		channel: 'stable' | 'preview' | 'nightly';
+		available: boolean;
+		downloading: boolean;
+		installing: boolean;
+		lastCheck: number | undefined;
+		currentVersion: string;
+		availableVersion: string | undefined;
+	};
+	/** Packaging state */
+	readonly packaging: {
+		isBuilding: boolean;
+		buildProgress: number;
+		artifactCount: number;
+		buildChannel: 'stable' | 'preview' | 'nightly';
+	};
+	/** Configuration state */
+	readonly configuration: {
+		profileCount: number;
+		activeProfile: string;
+		configVersion: string;
+	};
+	/** Health state */
+	readonly health: {
+		status: 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
+		score: number;
+		ready: boolean;
+		alive: boolean;
+	};
+}
+
+/**
+ * Production telemetry update payload.
+ */
+export interface ITelemetryUpdate {
+	enabled?: boolean;
+	anonymous?: boolean;
+	eventsCount?: number;
+	sessionsCount?: number;
+}
+
+/**
+ * Production metrics update payload.
+ */
+export interface IMetricsUpdate {
+	cpu?: number;
+	memory?: number;
+	gpu?: number;
+	disk?: number;
+	network?: number;
+	llmLatency?: number;
+	toolLatency?: number;
+	workflowLatency?: number;
+	agentLatency?: number;
+	tokenUsage?: number;
+}
+
+/**
+ * Production tracing update payload.
+ */
+export interface ITracingUpdate {
+	enabled?: boolean;
+	activeTraces?: number;
+	sampleRate?: number;
+}
+
+/**
+ * Production logging update payload.
+ */
+export interface ILoggingUpdate {
+	level?: 'debug' | 'info' | 'warning' | 'error';
+	entriesCount?: number;
+	retention?: number;
+}
+
+/**
+ * Production performance update payload.
+ */
+export interface IPerformanceUpdate {
+	startupTime?: number;
+	renderTime?: number;
+	slowTasks?: number;
+	memoryUsage?: number;
+	cpuUsage?: number;
+}
+
+/**
+ * Production cache update payload.
+ */
+export interface ICacheUpdate {
+	memorySize?: number;
+	diskSize?: number;
+	hitRate?: number;
+	evictions?: number;
+	embeddingCount?: number;
+	promptCount?: number;
+	toolCount?: number;
+	httpCount?: number;
+	providerCount?: number;
+}
+
+/**
+ * Production offline update payload.
+ */
+export interface IOfflineUpdate {
+	enabled?: boolean;
+	isOffline?: boolean;
+	queuedRequests?: number;
+	lastSyncTime?: number;
+}
+
+/**
+ * Production backup update payload.
+ */
+export interface IBackupUpdate {
+	enabled?: boolean;
+	lastBackup?: number;
+	backupCount?: number;
+	totalSize?: number;
+}
+
+/**
+ * Production recovery update payload.
+ */
+export interface IRecoveryUpdate {
+	lastRecovery?: number;
+	recoveryCount?: number;
+	pendingRecovery?: boolean;
+}
+
+/**
+ * Production update payload.
+ */
+export interface IProductionUpdate {
+	telemetry?: ITelemetryUpdate;
+	metrics?: IMetricsUpdate;
+	tracing?: ITracingUpdate;
+	logging?: ILoggingUpdate;
+	performance?: IPerformanceUpdate;
+	cache?: ICacheUpdate;
+	offline?: IOfflineUpdate;
+	backup?: IBackupUpdate;
+	recovery?: IRecoveryUpdate;
+	update?: {
+		channel?: 'stable' | 'preview' | 'nightly';
+		available?: boolean;
+		downloading?: boolean;
+		installing?: boolean;
+		lastCheck?: number;
+		currentVersion?: string;
+		availableVersion?: string;
+	};
+	packaging?: {
+		isBuilding?: boolean;
+		buildProgress?: number;
+		artifactCount?: number;
+		buildChannel?: 'stable' | 'preview' | 'nightly';
+	};
+	configuration?: {
+		profileCount?: number;
+		activeProfile?: string;
+		configVersion?: string;
+	};
+	health?: {
+		status?: 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
+		score?: number;
+		ready?: boolean;
+		alive?: boolean;
+	};
+}
+
+/*---------------------------------------------------------------------------------------------
  * DI token
  *--------------------------------------------------------------------------------------------*/
 
@@ -256,6 +508,13 @@ export interface IRuntimeState {
 	readonly enterprisePlugins: IPluginsStateSlice;
 	/** Secrets state */
 	readonly enterpriseSecrets: ISecretsStateSlice;
+
+	/*---------------------------------------------------------------------------------------------
+	 * Phase 6 Production Slices
+	 *--------------------------------------------------------------------------------------------*/
+
+	/** Production platform state */
+	readonly production: IProductionState;
 }
 
 /*---------------------------------------------------------------------------------------------
