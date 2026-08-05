@@ -63,6 +63,28 @@ export const enum RuntimeEventType {
 
 	ProviderUnhealthy,
 
+	ProviderConnected,
+
+	ProviderDisconnected,
+
+	ProviderFailed,
+
+	/* Prompts */
+
+	PromptRendered,
+
+	/* Embeddings */
+
+	EmbeddingCreated,
+
+	/* Tools */
+
+	ToolStarted,
+
+	ToolCompleted,
+
+	ToolFailed,
+
 	/* Workflows */
 
 	WorkflowCreated,

@@ -47,6 +47,16 @@ import { IAgentDispatcher, AgentDispatcher } from '../services/agentDispatcher.j
 import { IRuntimeCoordinator } from '../common/runtimeCoordinator.js';
 import { RuntimeCoordinator } from './runtimeCoordinator.js';
 
+// ── Phase 3 services ─────────────────────────────────────────────────────────
+
+import { IProviderManager, ProviderManager } from '../common/providerManager.js';
+import { IModelRegistry, ModelRegistry } from '../common/modelRegistry.js';
+import { IPromptManager, PromptManager } from '../common/promptManager.js';
+import { IContextBuilder, ContextBuilder } from '../common/contextBuilder.js';
+import { IMemoryManager, MemoryManager } from '../common/memoryManager.js';
+import { IEmbeddingManager, EmbeddingManager } from '../common/embeddingManager.js';
+import { IToolManager, ToolManager } from '../common/toolManager.js';
+
 // ── Views ─────────────────────────────────────────────────────────────────────
 
 import { NutanaaViews } from './nutanaaViews.js';
@@ -113,6 +123,57 @@ registerSingleton(
 registerSingleton(
 	IRuntimeCoordinator,
 	RuntimeCoordinator,
+	InstantiationType.Delayed
+);
+
+// ── Phase 3 ───────────────────────────────────────────────────────────────────
+
+// ProviderManager injects: IRuntimeEventBus, IRuntimeStateService, ILogService.
+registerSingleton(
+	IProviderManager,
+	ProviderManager,
+	InstantiationType.Delayed
+);
+
+// ModelRegistry injects: IRuntimeEventBus, IRuntimeStateService, ILogService.
+registerSingleton(
+	IModelRegistry,
+	ModelRegistry,
+	InstantiationType.Delayed
+);
+
+// PromptManager injects: IRuntimeEventBus, IRuntimeStateService, ILogService.
+registerSingleton(
+	IPromptManager,
+	PromptManager,
+	InstantiationType.Delayed
+);
+
+// ContextBuilder injects: IRuntimeEventBus, IRuntimeStateService, ILogService.
+registerSingleton(
+	IContextBuilder,
+	ContextBuilder,
+	InstantiationType.Delayed
+);
+
+// MemoryManager injects: IRuntimeEventBus, IRuntimeStateService, ILogService.
+registerSingleton(
+	IMemoryManager,
+	MemoryManager,
+	InstantiationType.Delayed
+);
+
+// EmbeddingManager injects: IRuntimeEventBus, IRuntimeStateService, ILogService.
+registerSingleton(
+	IEmbeddingManager,
+	EmbeddingManager,
+	InstantiationType.Delayed
+);
+
+// ToolManager injects: IRuntimeEventBus, IRuntimeStateService, ILogService.
+registerSingleton(
+	IToolManager,
+	ToolManager,
 	InstantiationType.Delayed
 );
 
@@ -183,6 +244,28 @@ class NutanaaContribution extends Disposable implements IWorkbenchContribution {
 		// Coordinator (constructs last; wires dispatcher inside its constructor)
 		@IRuntimeCoordinator
 		runtimeCoordinator: IRuntimeCoordinator,
+
+		// Phase 3 — AI Core
+		@IProviderManager
+		_providerManager: IProviderManager,
+
+		@IModelRegistry
+		_modelRegistry: IModelRegistry,
+
+		@IPromptManager
+		_promptManager: IPromptManager,
+
+		@IContextBuilder
+		_contextBuilder: IContextBuilder,
+
+		@IMemoryManager
+		_memoryManager: IMemoryManager,
+
+		@IEmbeddingManager
+		_embeddingManager: IEmbeddingManager,
+
+		@IToolManager
+		_toolManager: IToolManager,
 	) {
 		super();
 
@@ -194,6 +277,13 @@ class NutanaaContribution extends Disposable implements IWorkbenchContribution {
 		void _agentDispatcher;
 		void _taskScheduler;
 		void _workflowEngine;
+		void _providerManager;
+		void _modelRegistry;
+		void _promptManager;
+		void _contextBuilder;
+		void _memoryManager;
+		void _embeddingManager;
+		void _toolManager;
 
 		// Create the Nutanaa sidebar and all registered tree views.
 		this._register(

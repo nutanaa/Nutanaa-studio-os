@@ -218,6 +218,75 @@ export type WorkflowUpdate = Readonly<Record<string, IWorkflowState>>;
 export type MetricsUpdate = Partial<IMetricsState>;
 
 /*---------------------------------------------------------------------------------------------
+ * Phase 3 AI Core Update Types
+ *--------------------------------------------------------------------------------------------*/
+
+import { IModelInfo, IPromptTemplate, IToolDefinition, ProviderType, IProviderHealth } from '../models/aiCore.js';
+import { IMemoryStats } from '../models/aiCore.js';
+
+/** Extended ProviderUpdate for Phase 3 AI Core */
+export type AIProviderUpdate = {
+	/** Add new providers */
+	added?: Array<{
+		name: string;
+		type: ProviderType;
+		model: string;
+		enabled: boolean;
+		health: IProviderHealth;
+	}>;
+	/** Remove providers */
+	removed?: string[];
+	/** Update existing providers */
+	updated?: Array<{
+		name: string;
+		type: ProviderType;
+		model: string;
+		enabled: boolean;
+		health: IProviderHealth;
+	}>;
+	/** Update health status */
+	healthUpdates?: Array<{ name: string; health: IProviderHealth }>;
+	/** Select a provider */
+	selected?: string;
+	/** Add new models */
+	addedModels?: IModelInfo[];
+	/** Remove models */
+	removedModels?: string[];
+	/** Update models */
+	updatedModels?: IModelInfo[];
+	/** Update default model */
+	defaultModelUpdates?: Array<{ providerType: ProviderType; modelId: string }>;
+	/** Set global default model */
+	globalDefaultModel?: string;
+	/** Add new prompts */
+	addedPrompts?: IPromptTemplate[];
+	/** Remove prompts */
+	removedPrompts?: string[];
+	/** Update prompts */
+	updatedPrompts?: IPromptTemplate[];
+	/** Add new tools */
+	addedTools?: IToolDefinition[];
+	/** Remove tools */
+	removedTools?: string[];
+	/** Update tools */
+	updatedTools?: IToolDefinition[];
+	/** Memory updates */
+	memoryUpdates?: {
+		added?: Array<{ id: string; type: string; content: string }>;
+		updated?: Array<{ id: string; type: string; content: string }>;
+		deleted?: string[];
+		cleared?: string;
+		stats?: IMemoryStats;
+	};
+	/** Embedding statistics */
+	embeddingStats?: {
+		totalEmbeddings: number;
+		totalChunks: number;
+		averageDimensions: number;
+	};
+};
+
+/*---------------------------------------------------------------------------------------------
  * IRuntimeStateService
  *--------------------------------------------------------------------------------------------*/
 
