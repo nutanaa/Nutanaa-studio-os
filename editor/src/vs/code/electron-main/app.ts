@@ -45,6 +45,7 @@ import { IEnvironmentMainService } from '../../platform/environment/electron-mai
 import { isLaunchedFromCli } from '../../platform/environment/node/argvHelper.js';
 import { getResolvedShellEnv } from '../../platform/shell/node/shellEnv.js';
 import { IExtensionHostStarter, ipcExtensionHostStarterChannelName } from '../../platform/extensions/common/extensionHostStarter.js';
+import { BackendProcessManager } from './backendProcessManager.js';
 import { ExtensionHostStarter } from '../../platform/extensions/electron-main/extensionHostStarter.js';
 import { IExternalTerminalMainService } from '../../platform/externalTerminal/electron-main/externalTerminal.js';
 import { LinuxExternalTerminalService, MacExternalTerminalService, WindowsExternalTerminalService } from '../../platform/externalTerminal/node/externalTerminalService.js';
@@ -755,6 +756,14 @@ export class CodeApplication extends Disposable {
 
 		// Setup vscode-remote-resource protocol handler
 		this.setupManagedRemoteResourceUrlHandler(mainProcessElectronServer);
+
+		// Start the local backend if this is a dev environment and no backend is already running.
+		const backendProcessManager = this._register(new BackendProcessManager(this.environmentMainService, this.logService, this.lifecycleMainService));
+		try {
+			await backendProcessManager.startBackendIfAvailable();
+		} catch (error) {
+			this.logService.warn('Failed to start backend automatically.', error);
+		}
 
 		// Signal phase: ready - before opening first window
 		this.lifecycleMainService.phase = LifecycleMainPhase.Ready;

@@ -1,0 +1,15 @@
+2026-08-05T07:12:28 [INFO] runtime.bootstrap: Bootstrapping Nutanaa Studio OS runtime
+2026-08-05T07:12:28 [INFO] runtime.bootstrap: Runtime bootstrap complete
+2026-08-05T07:12:28 [INFO] runtime.providers.provider_manager: Registered provider: 'ollama'
+2026-08-05T07:12:28 [INFO] runtime.providers.provider_manager: Default provider set to: 'ollama'
+2026-08-05T07:12:28 [INFO] runtime.agents.agent_manager: Registered agent: 'chat-assistant'
+2026-08-05T07:12:28 [INFO] runtime.lifecycle.startup_manager: Starting ProviderManager
+2026-08-05T07:12:28 [INFO] httpx: HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2026-08-05T07:12:28 [INFO] httpx: HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2026-08-05T07:12:28 [WARNING] runtime.providers.ollama_provider: Configured default model 'llama3.2' is not installed; falling back to 'llama3.2:latest'. Installed models: ['llama3.2:latest', 'codellama:7b', 'llama3.1:8b']
+2026-08-05T07:12:28 [INFO] runtime.providers.provider_manager: Initialised provider: 'ollama'
+2026-08-05T07:12:28 [INFO] httpx: HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2026-08-05T07:12:28 [INFO] runtime.lifecycle.startup_manager: Starting PluginManager
+2026-08-05T07:12:28 [INFO] runtime.lifecycle.startup_manager: Starting AgentManager
+2026-08-05T07:12:28 [INFO] runtime.agents.agent_manager: Initialised agent: 'chat-assistant'
+2026-08-05T07:12:28 [INFO] backend.api.main: Nutanaa runtime started; API ready.

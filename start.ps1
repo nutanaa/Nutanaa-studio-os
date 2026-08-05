@@ -3,75 +3,153 @@ param(
     [switch]$SkipEditor
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "SilentlyContinue"
+
+# ---------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------
 
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$VenvPython = Join-Path $ProjectRoot "editor\venv\Scripts\python.exe"
-$UvicornPort = 8787
-$UvicornProcessName = "uvicorn"
 
-function Test-UvicornRunning {
-    try {
-        $connection = Test-NetConnection -ComputerName 127.0.0.1 -Port $UvicornPort -WarningAction SilentlyContinue
-        return $connection.TcpTestSucceeded
-    } catch {
-        return $false
-    }
+$Python = Join-Path $ProjectRoot "venv\Scripts\python.exe"
+
+if (!(Test-Path $Python)) {
+    $Python = Join-Path $ProjectRoot "editor\venv\Scripts\python.exe"
 }
 
-function Start-Uvicorn {
-    Write-Host "Starting uvicorn backend on port $UvicornPort..." -ForegroundColor Cyan
-    $env:PYTHONPATH = "."
+$BackendPort = 8787
+
+$EditorExe = Join-Path $ProjectRoot "editor\.build\electron\Nutanaa Studio OS.exe"
+
+$EditorCodeBat = Join-Path $ProjectRoot "editor\scripts\code.bat"
+
+$Logs = Join-Path $ProjectRoot "logs"
+
+New-Item -ItemType Directory -Force -Path $Logs | Out-Null
+
+# ---------------------------------------------------------
+# Kill Existing Backend
+# ---------------------------------------------------------
+
+function Stop-Backend {
+
+    Write-Host ""
+    Write-Host "Stopping previous backend..." -ForegroundColor Yellow
+
+    $connections = Get-NetTCPConnection `
+        -LocalPort $BackendPort `
+        -ErrorAction SilentlyContinue
+
+    if ($connections) {
+
+        $connections |
+            Select-Object -ExpandProperty OwningProcess -Unique |
+            ForEach-Object {
+
+                Write-Host "Killing PID $_"
+
+                Stop-Process `
+                    -Id $_ `
+                    -Force `
+                    -ErrorAction SilentlyContinue
+
+            }
+
+    }
+
+}
+
+# ---------------------------------------------------------
+# Start Backend
+# ---------------------------------------------------------
+
+function Start-Backend {
+
+    Write-Host ""
+    Write-Host "Starting Backend..." -ForegroundColor Cyan
+
+    $env:PYTHONPATH = $ProjectRoot
     $env:PYTHONUNBUFFERED = "1"
-    $env:PYTHONDONTWRITEBYTECODE = "1"
 
-    $proc = Start-Process -FilePath $VenvPython -ArgumentList "-m", "uvicorn", "backend.api.main:app", "--host", "127.0.0.1", "--port", $UvicornPort, "--reload" -PassThru -NoNewWindow
-    Write-Host "uvicorn started (PID: $($proc.Id))" -ForegroundColor Green
+    $stdout = Join-Path $Logs "backend.log"
+    $stderr = Join-Path $Logs "backend.err"
 
-    $timeout = 30
-    $elapsed = 0
-    while (-not (Test-UvicornRunning) -and $elapsed -lt $timeout) {
-        Start-Sleep -Seconds 1
-        $elapsed++
-    }
+    Remove-Item $stdout,$stderr -Force -ErrorAction SilentlyContinue
 
-    if (Test-UvicornRunning) {
-        Write-Host "Backend is ready on http://127.0.0.1:$UvicornPort" -ForegroundColor Green
-    } else {
-        Write-Host "WARNING: Backend may not be ready yet. Check the terminal for errors." -ForegroundColor Yellow
-    }
+    $process = Start-Process `
+        -FilePath $Python `
+        -ArgumentList @(
+            "-m",
+            "uvicorn",
+            "backend.api.main:app",
+            "--host","127.0.0.1",
+            "--port",$BackendPort,
+            "--reload"
+        ) `
+        -WorkingDirectory $ProjectRoot `
+        -RedirectStandardOutput $stdout `
+        -RedirectStandardError $stderr `
+        -WindowStyle Hidden `
+        -PassThru
+
+    Write-Host "Backend PID : $($process.Id)" -ForegroundColor Green
+
 }
+
+# ---------------------------------------------------------
+# Start Editor
+# ---------------------------------------------------------
 
 function Start-Editor {
-    Write-Host "Opening VS Code..." -ForegroundColor Cyan
-    $codeScript = Join-Path $ProjectRoot "editor\scripts\code.bat"
-    if (Test-Path $codeScript) {
-        Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile", "-Command", "& '$codeScript'" -Verb Open
-    } else {
-        Write-Host "ERROR: code.bat not found at $codeScript" -ForegroundColor Red
+
+    Write-Host ""
+    Write-Host "Starting Nutanaa Studio OS..." -ForegroundColor Cyan
+
+    if (Test-Path $EditorExe) {
+
+        Start-Process `
+            -FilePath $EditorExe `
+            -WorkingDirectory (Join-Path $ProjectRoot "editor")
+
+        return
     }
+
+    if (Test-Path $EditorCodeBat) {
+
+        Start-Process `
+            -FilePath "cmd.exe" `
+            -ArgumentList "/c", "`"$EditorCodeBat`" ." `
+            -WorkingDirectory (Join-Path $ProjectRoot "editor")
+
+        return
+    }
+
+    Write-Host "Editor executable not found." -ForegroundColor Red
+
 }
 
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  Nutanaa Studio OS - Startup Script" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
+# ---------------------------------------------------------
+# Startup
+# ---------------------------------------------------------
+
 Write-Host ""
+Write-Host "==============================================" -ForegroundColor Cyan
+Write-Host "      Nutanaa Studio OS Launcher" -ForegroundColor Cyan
+Write-Host "==============================================" -ForegroundColor Cyan
 
 if (-not $SkipBackend) {
-    if (Test-UvicornRunning) {
-        Write-Host "Backend is already running on port $UvicornPort" -ForegroundColor Green
-    } else {
-        Start-Uvicorn
-    }
-} else {
-    Write-Host "Skipping backend startup (SkipBackend flag)" -ForegroundColor Yellow
+
+    Stop-Backend
+
+    Start-Backend
+
 }
 
 if (-not $SkipEditor) {
+
     Start-Editor
-} else {
-    Write-Host "Skipping editor startup (SkipEditor flag)" -ForegroundColor Yellow
+
 }
 
 Write-Host ""
-Write-Host "Done. Nutanaa Studio OS is ready." -ForegroundColor Cyan
+Write-Host "Launcher Finished." -ForegroundColor Green

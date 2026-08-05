@@ -49,7 +49,7 @@ Use the repository startup helper from the repo root:
 cd C:\Users\purushotham\git\Nutanaa-studio-os
 .\start.ps1
 ```
-This starts the FastAPI backend on `127.0.0.1:8787` and opens the editor.
+The editor now auto-starts the local backend in development mode when launched from the repo. `start.ps1` remains available as a shortcut to launch both the backend and the editor together.
 
 - `.\start.ps1 -SkipEditor` starts only the backend.
 - `.\start.ps1 -SkipBackend` opens only VS Code and assumes the backend is already running.
