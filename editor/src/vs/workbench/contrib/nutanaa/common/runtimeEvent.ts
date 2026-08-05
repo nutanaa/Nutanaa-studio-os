@@ -139,7 +139,97 @@ export const enum RuntimeEventType {
 
 	/* Notifications */
 
-	Notification
+	Notification,
+
+	/*---------------------------------------------------------------------------------------------
+	 * Phase 5 Enterprise Events
+	 *--------------------------------------------------------------------------------------------*/
+
+	/* Authentication */
+
+	UserLoggedIn,
+
+	UserLoggedOut,
+
+	UserLoginFailed,
+
+	/* Authorization */
+
+	PermissionChanged,
+
+	RoleAssigned,
+
+	RoleRevoked,
+
+	/* Secrets */
+
+	SecretCreated,
+
+	SecretUpdated,
+
+	SecretDeleted,
+
+	SecretAccessed,
+
+	SecretRotated,
+
+	/* Plugins */
+
+	PluginInstalled,
+
+	PluginRemoved,
+
+	PluginLoaded,
+
+	PluginUnloaded,
+
+	PluginError,
+
+	/* Marketplace */
+
+	MarketplaceSearch,
+
+	MarketplaceInstall,
+
+	MarketplaceUpdate,
+
+	/* Remote Agents */
+
+	AgentConnected,
+
+	AgentDisconnected,
+
+	AgentHeartbeat,
+
+	/* Distributed Runtime */
+
+	NodeConnected,
+
+	NodeDisconnected,
+
+	MasterElected,
+
+	FailoverTriggered,
+
+	/* Organizations */
+
+	OrganizationChanged,
+
+	TeamCreated,
+
+	TeamUpdated,
+
+	TeamDeleted,
+
+	MemberJoined,
+
+	MemberLeft,
+
+	/* Audit */
+
+	AuditEvent,
+
+	SecurityAlert
 }
 
 /**

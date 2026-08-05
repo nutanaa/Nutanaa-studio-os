@@ -57,6 +57,18 @@ import { IMemoryManager, MemoryManager } from '../common/memoryManager.js';
 import { IEmbeddingManager, EmbeddingManager } from '../common/embeddingManager.js';
 import { IToolManager, ToolManager } from '../common/toolManager.js';
 
+// ── Phase 5 services ─────────────────────────────────────────────────────────
+
+import { IAuthenticationManager, AuthenticationManager } from '../common/authenticationManager.js';
+import { IAuthorizationManager, AuthorizationManager } from '../common/authorizationManager.js';
+import { ISecretsManager, SecretsManager } from '../common/secretsManager.js';
+import { IPluginManager, PluginManager } from '../common/pluginManager.js';
+import { IMarketplaceService, MarketplaceService } from '../common/marketplaceService.js';
+import { IRemoteAgentManager, RemoteAgentManager } from '../common/remoteAgentManager.js';
+import { IDistributedRuntimeManager, DistributedRuntimeManager } from '../common/distributedRuntimeManager.js';
+import { IOrganizationManager, OrganizationManager } from '../common/organizationManager.js';
+import { IAuditManager, AuditManager } from '../common/auditManager.js';
+
 // ── Views ─────────────────────────────────────────────────────────────────────
 
 import { NutanaaViews } from './nutanaaViews.js';
@@ -177,6 +189,71 @@ registerSingleton(
 	InstantiationType.Delayed
 );
 
+// ── Phase 5 ───────────────────────────────────────────────────────────────────
+
+// AuthenticationManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	IAuthenticationManager,
+	AuthenticationManager,
+	InstantiationType.Delayed
+);
+
+// AuthorizationManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	IAuthorizationManager,
+	AuthorizationManager,
+	InstantiationType.Delayed
+);
+
+// SecretsManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	ISecretsManager,
+	SecretsManager,
+	InstantiationType.Delayed
+);
+
+// PluginManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	IPluginManager,
+	PluginManager,
+	InstantiationType.Delayed
+);
+
+// MarketplaceService injects: IPluginManager, IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	IMarketplaceService,
+	MarketplaceService,
+	InstantiationType.Delayed
+);
+
+// RemoteAgentManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	IRemoteAgentManager,
+	RemoteAgentManager,
+	InstantiationType.Delayed
+);
+
+// DistributedRuntimeManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	IDistributedRuntimeManager,
+	DistributedRuntimeManager,
+	InstantiationType.Delayed
+);
+
+// OrganizationManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	IOrganizationManager,
+	OrganizationManager,
+	InstantiationType.Delayed
+);
+
+// AuditManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+registerSingleton(
+	IAuditManager,
+	AuditManager,
+	InstantiationType.Delayed
+);
+
 /*---------------------------------------------------------------------------------------------
  * Sidebar Registration
  *--------------------------------------------------------------------------------------------*/
@@ -266,6 +343,34 @@ class NutanaaContribution extends Disposable implements IWorkbenchContribution {
 
 		@IToolManager
 		_toolManager: IToolManager,
+
+		// Phase 5 — Enterprise Platform
+		@IAuthenticationManager
+		_authenticationManager: IAuthenticationManager,
+
+		@IAuthorizationManager
+		_authorizationManager: IAuthorizationManager,
+
+		@ISecretsManager
+		_secretsManager: ISecretsManager,
+
+		@IPluginManager
+		_pluginManager: IPluginManager,
+
+		@IMarketplaceService
+		_marketplaceService: IMarketplaceService,
+
+		@IRemoteAgentManager
+		_remoteAgentManager: IRemoteAgentManager,
+
+		@IDistributedRuntimeManager
+		_distributedRuntimeManager: IDistributedRuntimeManager,
+
+		@IOrganizationManager
+		_organizationManager: IOrganizationManager,
+
+		@IAuditManager
+		_auditManager: IAuditManager,
 	) {
 		super();
 

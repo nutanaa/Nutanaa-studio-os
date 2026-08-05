@@ -9,6 +9,69 @@ import { NutanaaRuntimeConnectionState, INutanaaAgentSummary, INutanaaProviderSu
 import { IAgentMetrics, IAgentSystemHealth } from '../models/agentMetricsModel.js';
 import { IAgentQueueStatus } from '../models/agentQueueModel.js';
 import { IMemoryEntry, MemoryType } from '../models/memoryModel.js';
+import { IUser, IOrganization, IPlugin, IPluginListing, ISecret, INodeInfo, IPermission } from '../models/enterpriseModel.js';
+
+/*---------------------------------------------------------------------------------------------
+ * DI token
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
+ * Phase 5 Enterprise State Slices
+ *--------------------------------------------------------------------------------------------*/
+
+/**
+ * Enterprise authentication and authorization state.
+ */
+export interface IEnterpriseState {
+	/** Current authenticated user */
+	readonly currentUser: IUser | undefined;
+	/** Current organization */
+	readonly currentOrganization: IOrganization | undefined;
+	/** Current session */
+	readonly session: unknown | undefined;
+	/** Whether user is authenticated */
+	readonly isAuthenticated: boolean;
+	/** User's effective permissions */
+	readonly userPermissions: IPermission[];
+	/** User's assigned roles */
+	readonly userRoles: string[];
+	/** Team IDs user belongs to in current organization */
+	readonly organizationTeamIds: string[];
+}
+
+/**
+ * Cluster state for distributed runtime.
+ */
+export interface IClusterStateSlice {
+	/** Nodes keyed by node id */
+	readonly nodes: ReadonlyMap<string, { nodeId: string; status: 'online' | 'offline' | 'degraded'; load: number; lastSeen: number }>;
+	/** Current master node id */
+	readonly masterNode: string | undefined;
+	/** Total cluster load */
+	readonly totalLoad: number;
+	/** Average load across nodes */
+	readonly averageLoad: number;
+}
+
+/**
+ * Plugin state.
+ */
+export interface IPluginsStateSlice {
+	/** Installed plugins keyed by plugin id */
+	readonly installed: ReadonlyMap<string, IPlugin>;
+	/** Cached marketplace listings */
+	readonly marketplace: Array<{ id: string; name: string; displayName: string }>;
+}
+
+/**
+ * Secrets state.
+ */
+export interface ISecretsStateSlice {
+	/** Secrets keyed by secret id */
+	readonly secrets: ReadonlyMap<string, ISecret>;
+	/** Access log entries */
+	readonly accessLog: Array<{ secretId: string; userId: string; accessedAt: number; accessType: 'read' | 'write' | 'admin' }>;
+}
 
 /*---------------------------------------------------------------------------------------------
  * DI token
@@ -180,6 +243,19 @@ export interface IRuntimeState {
 	readonly metrics: IMetricsState;
 	/** Sessions keyed by session id. */
 	readonly sessions: Readonly<Record<string, ISessionState>>;
+
+	/*---------------------------------------------------------------------------------------------
+	 * Phase 5 Enterprise Slices
+	 *--------------------------------------------------------------------------------------------*/
+
+	/** Enterprise authentication and authorization state */
+	readonly enterprise: IEnterpriseState;
+	/** Cluster state for distributed runtime */
+	readonly clusterState: IClusterStateSlice;
+	/** Plugin state */
+	readonly enterprisePlugins: IPluginsStateSlice;
+	/** Secrets state */
+	readonly enterpriseSecrets: ISecretsStateSlice;
 }
 
 /*---------------------------------------------------------------------------------------------
