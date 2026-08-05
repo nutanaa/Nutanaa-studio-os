@@ -60,6 +60,7 @@ class RuntimeKernel:
     state_store: StateStore | None = None
     telemetry: TelemetryService | None = None
     plugin_registry: PluginRegistry | None = None
+    task_execution_engine: "TaskExecutionEngine" | None = None
     _running: bool = False
 
     @classmethod
@@ -89,6 +90,15 @@ class RuntimeKernel:
         kernel.state_store = StateStore(context.event_bus)
         kernel.telemetry = TelemetryService(context.event_bus)
         kernel.plugin_registry = PluginRegistry()
+        from runtime.tasks.task_execution_engine import TaskExecutionEngine
+
+        kernel.task_execution_engine = TaskExecutionEngine(
+            provider_manager=context.provider_manager,
+            agent_manager=context.agent_manager,
+            event_bus=context.event_bus,
+            state_store=kernel.state_store,
+            telemetry=kernel.telemetry,
+        )
         kernel._register_defaults()
         return kernel
 
@@ -100,6 +110,11 @@ class RuntimeKernel:
         self.service_registry.register("StateStore", self.state_store)
         self.service_registry.register("TelemetryService", self.telemetry)
         self.service_registry.register("PluginRegistry", self.plugin_registry)
+        if self.task_execution_engine is not None:
+            self.service_registry.register(
+                "TaskExecutionEngine",
+                self.task_execution_engine,
+            )
         logger.debug("Runtime kernel default services registered")
 
     async def initialize(self) -> None:
