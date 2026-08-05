@@ -43,6 +43,19 @@ its own. Always start the backend first.
 
 ## 3. Running it — every time
 
+### Quick start (recommended)
+Use the repository startup helper from the repo root:
+```powershell
+cd C:\Users\purushotham\git\Nutanaa-studio-os
+.\start.ps1
+```
+This starts the FastAPI backend on `127.0.0.1:8787` and opens the editor.
+
+- `.\start.ps1 -SkipEditor` starts only the backend.
+- `.\start.ps1 -SkipBackend` opens only VS Code and assumes the backend is already running.
+
+If you prefer manual control, the commands below still work.
+
 **Terminal 1 — backend** (leave running):
 ```powershell
 cd C:\Users\purushotham\git\Nutanaa-studio-os
