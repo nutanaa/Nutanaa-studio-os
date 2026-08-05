@@ -20,44 +20,142 @@ import {
 	registerWorkbenchContribution2,
 	WorkbenchPhase,
 } from '../../../common/contributions.js';
-import { INutanaaRuntimeConnectionService, NUTANAA_VIEW_CONTAINER_ID } from '../common/nutanaa.js';
+
+import {
+	INutanaaRuntimeConnectionService,
+	NUTANAA_VIEW_CONTAINER_ID
+} from '../common/nutanaa.js';
+
 import { NutanaaRuntimeConnectionService } from './nutanaaRuntimeConnectionService.js';
 import { NutanaaViews } from './nutanaaViews.js';
 import { nutanaaViewIcon } from './nutanaaIcons.js';
 
-registerSingleton(INutanaaRuntimeConnectionService, NutanaaRuntimeConnectionService, InstantiationType.Delayed);
+import {
+	IRuntimeEventBus,
+	RuntimeEventBus
+} from '../common/runtimeEventBus.js';
 
-const NUTANAA_VIEW_CONTAINER = Registry.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry).registerViewContainer(
-	{
-		id: NUTANAA_VIEW_CONTAINER_ID,
-		title: localize2('nutanaa', "Nutanaa"),
-		icon: nutanaaViewIcon,
-		ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [NUTANAA_VIEW_CONTAINER_ID, { mergeViewWithContainerWhenSingleView: true }]),
-		openCommandActionDescriptor: {
-			id: NUTANAA_VIEW_CONTAINER_ID,
-			mnemonicTitle: localize({ key: 'miViewNutanaa', comment: ['&& denotes a mnemonic'] }, "&&Nutanaa"),
-			order: 10,
-		},
-		order: 10,
-		alwaysUseContainerInfo: true,
-	},
-	ViewContainerLocation.Sidebar
+import {
+	IAgentCoordinator,
+	AgentCoordinator
+} from '../common/agentCoordinator.js';
+
+import {
+	IRuntimeCoordinator
+} from '../common/runtimeCoordinator.js';
+
+import {
+	RuntimeCoordinator
+} from './runtimeCoordinator.js';
+
+/*---------------------------------------------------------------------------------------------
+ * Service Registration
+ *--------------------------------------------------------------------------------------------*/
+
+registerSingleton(
+	INutanaaRuntimeConnectionService,
+	NutanaaRuntimeConnectionService,
+	InstantiationType.Delayed
 );
 
-/**
- * Instantiates {@link NutanaaViews} once the workbench has restored its UI
- * state, and kicks off the one and only connect() call to the Nutanaa
- * Runtime backend. Nothing else in the codebase calls connect() —
- * this is deliberately the single place it happens.
- */
+registerSingleton(
+	IRuntimeEventBus,
+	RuntimeEventBus,
+	InstantiationType.Delayed
+);
+
+registerSingleton(
+	IAgentCoordinator,
+	AgentCoordinator,
+	InstantiationType.Delayed
+);
+
+registerSingleton(
+	IRuntimeCoordinator,
+	RuntimeCoordinator,
+	InstantiationType.Delayed
+);
+
+/*---------------------------------------------------------------------------------------------
+ * Sidebar Registration
+ *--------------------------------------------------------------------------------------------*/
+
+const NUTANAA_VIEW_CONTAINER = Registry
+	.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry)
+	.registerViewContainer(
+		{
+			id: NUTANAA_VIEW_CONTAINER_ID,
+			title: localize2('nutanaa', 'Nutanaa'),
+			icon: nutanaaViewIcon,
+			ctorDescriptor: new SyncDescriptor(
+				ViewPaneContainer,
+				[
+					NUTANAA_VIEW_CONTAINER_ID,
+					{
+						mergeViewWithContainerWhenSingleView: true
+					}
+				]
+			),
+			openCommandActionDescriptor: {
+				id: NUTANAA_VIEW_CONTAINER_ID,
+				mnemonicTitle: localize(
+					{
+						key: 'miViewNutanaa',
+						comment: ['&& denotes a mnemonic']
+					},
+					'&&Nutanaa'
+				),
+				order: 10
+			},
+			order: 10,
+			alwaysUseContainerInfo: true
+		},
+		ViewContainerLocation.Sidebar
+	);
+
+/*---------------------------------------------------------------------------------------------
+ * Nutanaa Bootstrap
+ *--------------------------------------------------------------------------------------------*/
+
 class NutanaaContribution extends Disposable implements IWorkbenchContribution {
+
 	constructor(
-		@IInstantiationService instantiationService: IInstantiationService,
-		@INutanaaRuntimeConnectionService runtimeConnectionService: INutanaaRuntimeConnectionService,
+		@IInstantiationService
+		instantiationService: IInstantiationService,
+
+		@INutanaaRuntimeConnectionService
+		runtimeConnectionService: INutanaaRuntimeConnectionService,
+
+		@IRuntimeEventBus
+		runtimeEventBus: IRuntimeEventBus,
+
+		@IAgentCoordinator
+		agentCoordinator: IAgentCoordinator,
+
+		@IRuntimeCoordinator
+		runtimeCoordinator: IRuntimeCoordinator,
 	) {
 		super();
-		this._register(instantiationService.createInstance(NutanaaViews, NUTANAA_VIEW_CONTAINER));
-		runtimeConnectionService.connect();
+
+		// Force creation of all lazy singleton services.
+		// The DI container owns their lifetime.
+		void runtimeEventBus;
+		void agentCoordinator;
+
+		// Create the Nutanaa sidebar and all registered views.
+		this._register(
+			instantiationService.createInstance(
+				NutanaaViews,
+				NUTANAA_VIEW_CONTAINER
+			)
+		);
+
+		// Start the runtime coordinator before connecting to the backend.
+		// This ensures it is ready to consume runtime events immediately.
+		void runtimeCoordinator.start();
+
+		// Establish HTTP/WebSocket connection to the runtime.
+		void runtimeConnectionService.connect();
 	}
 }
 
