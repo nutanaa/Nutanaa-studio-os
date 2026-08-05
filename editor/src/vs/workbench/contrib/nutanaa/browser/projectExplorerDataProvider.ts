@@ -10,74 +10,170 @@ import {
 	ITreeViewDataProvider,
 	TreeItemCollapsibleState
 } from '../../../common/views.js';
+import { IRuntimeStateService } from '../common/runtimeState.js';
+import { IRuntimeEventBus, RuntimeEventType } from '../common/runtimeEventBus.js';
+import { IWorkspaceService } from '../../../../workspace/common/workspace.js';
 
+/**
+ * Project Explorer Data Provider for Nutanaa Studio OS.
+ *
+ * Provides workspace and project data from RuntimeState and workspace services.
+ */
 export class ProjectExplorerDataProvider extends Disposable implements ITreeViewDataProvider {
 
-	private readonly _onDidChangeTreeData = new Emitter<ITreeItem[] | void>();
+	private static readonly RECENT_ID = 'recentProjects';
+	private static readonly TEMPLATES_ID = 'templates';
+	private static readonly WORKSPACE_ID = 'workspace';
+
+	private readonly _onDidChangeTreeData = this._register(new Emitter<ITreeItem[] | void>());
 	readonly onDidChangeTreeData: Event<ITreeItem[] | void> = this._onDidChangeTreeData.event;
 
-	constructor() {
+	constructor(
+		@IRuntimeStateService private readonly stateService: IRuntimeStateService,
+		@IRuntimeEventBus private readonly runtimeEventBus: IRuntimeEventBus,
+		@IWorkspaceService private readonly workspaceService: IWorkspaceService,
+	) {
 		super();
+
+		this._register(this.stateService.onDidChangeState(() => this._onDidChangeTreeData.fire()));
+		this._register(this.runtimeEventBus.on(RuntimeEventType.WorkflowCreated, () => this._onDidChangeTreeData.fire()));
+		this._register(this.runtimeEventBus.on(RuntimeEventType.MemoryUpdated, () => this._onDidChangeTreeData.fire()));
 	}
 
 	async getChildren(element?: ITreeItem): Promise<ITreeItem[]> {
 
 		if (!element) {
-			return [
-				{
-					handle: 'recentProjects',
-					label: { label: 'Recent Projects' },
-					collapsibleState: TreeItemCollapsibleState.Collapsed
-				},
-				{
-					handle: 'templates',
-					label: { label: 'Project Templates' },
-					collapsibleState: TreeItemCollapsibleState.Collapsed
-				},
-				{
-					handle: 'workspace',
-					label: { label: 'Workspace Metadata' },
-					collapsibleState: TreeItemCollapsibleState.Collapsed
-				}
-			];
+			return this.buildRootItems();
 		}
 
+		const state = this.stateService.getState();
+
 		switch (element.handle) {
-
-			case 'recentProjects':
-				return [
-					{
-						handle: 'sample1',
-						label: { label: 'AI Studio OS' },
-						collapsibleState: TreeItemCollapsibleState.None
-					}
-				];
-
-			case 'templates':
-				return [
-					{
-						handle: 'template-python',
-						label: { label: 'Python Agent Project' },
-						collapsibleState: TreeItemCollapsibleState.None
-					},
-					{
-						handle: 'template-typescript',
-						label: { label: 'TypeScript Extension' },
-						collapsibleState: TreeItemCollapsibleState.None
-					}
-				];
-
-			case 'workspace':
-				return [
-					{
-						handle: 'workspaceInfo',
-						label: { label: 'Workspace.json' },
-						collapsibleState: TreeItemCollapsibleState.None
-					}
-				];
+			case ProjectExplorerDataProvider.RECENT_ID:
+				return this.buildRecentProjects(state);
+			case ProjectExplorerDataProvider.TEMPLATES_ID:
+				return this.buildTemplates();
+			case ProjectExplorerDataProvider.WORKSPACE_ID:
+				return this.buildWorkspaceItems(state);
 		}
 
 		return [];
+	}
+
+	private buildRootItems(): ITreeItem[] {
+		const workspace = this.workspaceService.getWorkspace();
+		const hasWorkspace = workspace.configurations && workspace.configurations.length > 0;
+
+		return [
+			{
+				handle: ProjectExplorerDataProvider.RECENT_ID,
+				label: { label: 'Recent Projects' },
+				collapsibleState: TreeItemCollapsibleState.Collapsed,
+				contextValue: 'nutanaaProject.recent',
+			},
+			{
+				handle: ProjectExplorerDataProvider.TEMPLATES_ID,
+				label: { label: 'Project Templates' },
+				collapsibleState: TreeItemCollapsibleState.Collapsed,
+				contextValue: 'nutanaaProject.templates',
+			},
+			{
+				handle: ProjectExplorerDataProvider.WORKSPACE_ID,
+				label: { label: hasWorkspace ? 'Workspace' : 'No Workspace Open' },
+				collapsibleState: hasWorkspace ? TreeItemCollapsibleState.Collapsed : TreeItemCollapsibleState.None,
+				contextValue: hasWorkspace ? 'nutanaaProject.workspace' : 'nutanaaProject.workspaceEmpty',
+			}
+		];
+	}
+
+	private buildRecentProjects(state: ReturnType<IRuntimeStateService['getState']>): ITreeItem[] {
+		const workflows = Object.values(state.workflows);
+		const recentProjects = new Map<string, { name: string; timestamp: number }>();
+
+		for (const wf of workflows) {
+			if (!recentProjects.has(wf.id)) {
+				recentProjects.set(wf.id, {
+					name: wf.name,
+					timestamp: wf.createdAt
+				});
+			}
+		}
+
+		if (recentProjects.size === 0) {
+			return [{
+				handle: 'recent-none',
+				label: { label: 'No recent projects' },
+				collapsibleState: TreeItemCollapsibleState.None,
+				contextValue: 'nutanaaProject.empty',
+			}];
+		}
+
+		return Array.from(recentProjects.values())
+			.sort((a, b) => b.timestamp - a.timestamp)
+			.slice(0, 10)
+			.map(project => ({
+				handle: `recent-${project.timestamp}`,
+				label: { label: project.name },
+				description: new Date(project.timestamp).toLocaleDateString(),
+				collapsibleState: TreeItemCollapsibleState.None,
+				contextValue: 'nutanaaProject.recentItem',
+			}));
+	}
+
+	private buildTemplates(): ITreeItem[] {
+		return [
+			{
+				handle: 'template-python',
+				label: { label: 'Python Agent Project' },
+				description: 'Start with a Python-based AI agent',
+				collapsibleState: TreeItemCollapsibleState.None,
+				contextValue: 'nutanaaProject.template',
+			},
+			{
+				handle: 'template-typescript',
+				label: { label: 'TypeScript Extension' },
+				description: 'Build a VS Code extension',
+				collapsibleState: TreeItemCollapsibleState.None,
+				contextValue: 'nutanaaProject.template',
+			},
+			{
+				handle: 'template-workflow',
+				label: { label: 'Workflow Project' },
+				description: 'Create a workflow-based project',
+				collapsibleState: TreeItemCollapsibleState.None,
+				contextValue: 'nutanaaProject.template',
+			}
+		];
+	}
+
+	private buildWorkspaceItems(state: ReturnType<IRuntimeStateService['getState']>): ITreeItem[] {
+		const workspace = this.workspaceService.getWorkspace();
+
+		if (!workspace.configurations || workspace.configurations.length === 0) {
+			return [];
+		}
+
+		const workflows = Object.values(state.workflows);
+		const items: ITreeItem[] = [
+			{
+				handle: 'workspace-config',
+				label: { label: 'workspace.json' },
+				description: 'Workspace configuration',
+				collapsibleState: TreeItemCollapsibleState.None,
+				contextValue: 'nutanaaProject.config',
+			}
+		];
+
+		if (workflows.length > 0) {
+			items.push({
+				handle: 'workspace-workflows',
+				label: { label: `Workflows (${workflows.length})` },
+				collapsibleState: TreeItemCollapsibleState.Collapsed,
+				contextValue: 'nutanaaProject.workflows',
+			});
+		}
+
+		return items;
 	}
 
 	refresh(): void {
