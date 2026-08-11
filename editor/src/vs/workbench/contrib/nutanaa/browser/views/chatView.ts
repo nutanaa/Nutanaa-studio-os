@@ -21,10 +21,12 @@ import { IRuntimeEventBus } from '../../common/runtime/runtimeEventBus.js';
 import { RuntimeEventType } from '../../common/runtime/runtimeEvents.js';
 import { AgentEvent, AgentStreamEvent, RuntimeEvent } from '../../common/runtime/runtimeEvent.js';
 import { IRuntimeCoordinator } from '../../common/runtime/runtimeCoordinator.js';
+import { IProviderManager } from '../../common/providers/providerManager.js';
+import { IModelRegistry } from '../../common/providers/modelRegistry.js';
 import { IChatMessage, IChatAttachment } from '../../models/studioModel.js';
 import { IAgentExecutionRequest } from '../../models/executionModel.js';
 import { localize } from '../../../../../nls.js';
-import { renderMarkdown } from '../../../../../base/browser/markdownRenderer.js';
+import { renderMarkdown, IRenderedMarkdown } from '../../../../../base/browser/markdownRenderer.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 
 interface ChatViewState {
@@ -47,18 +49,6 @@ const CHAT_MODES: readonly { id: ChatMode; label: string }[] = [
 	{ id: 'ask', label: 'Ask' },
 	{ id: 'debug', label: 'Debug' },
 	{ id: 'review', label: 'Review' },
-];
-
-interface MockProvider {
-	readonly id: string;
-	readonly name: string;
-	readonly models: readonly string[];
-}
-
-const MOCK_PROVIDERS: readonly MockProvider[] = [
-	{ id: 'ollama', name: 'Ollama', models: ['llama3.2', 'qwen3', 'codegemma'] },
-	{ id: 'openai', name: 'OpenAI', models: ['GPT-5', 'GPT-5-mini'] },
-	{ id: 'anthropic', name: 'Anthropic', models: ['Claude Sonnet'] },
 ];
 
 const MOCK_SHORTCUTS: readonly { readonly title: string; readonly prompt: string }[] = [
@@ -98,6 +88,8 @@ export class ChatView extends FilterViewPane {
 	private static readonly MESSAGES_STORE_KEY = 'nutanaa.chat.messages';
 	private static readonly INPUT_STORE_KEY = 'nutanaa.chat.input';
 	private static readonly MODE_STORE_KEY = 'nutanaa.chat.mode';
+	private static readonly PROVIDER_STORE_KEY = 'nutanaa.chat.provider';
+	private static readonly MODEL_STORE_KEY = 'nutanaa.chat.model';
 
 	private readonly _onDidChangeContentHeight = this._register(new Emitter<number>());
 	public readonly onDidChangeContentHeight = this._onDidChangeContentHeight.event;
@@ -114,7 +106,12 @@ export class ChatView extends FilterViewPane {
 	private tokenCounter!: HTMLElement;
 	private modeSelector!: HTMLElement;
 	private providerSelector!: HTMLElement;
-	private modelSelector!: HTMLElement;
+	private modelDropdownContainer!: HTMLElement;
+	private modelDropdownTrigger!: HTMLElement;
+	private modelDropdownPanel!: HTMLElement;
+	private modelSearchInput!: HTMLInputElement;
+	private modelListContainer!: HTMLElement;
+	private modelDropdownOpen = false;
 	private scrollContainer!: HTMLElement;
 	private thinkingIndicator!: HTMLElement | undefined;
 	private contextChipsContainer!: HTMLElement | undefined;
@@ -127,6 +124,7 @@ export class ChatView extends FilterViewPane {
 	private pendingMessages: Map<string, IChatMessage> = new Map();
 	private streamingMessageId: string | undefined;
 	private markdownRenderer: typeof renderMarkdown;
+	private markdownDisposables = new Map<string, IDisposable>();
 
 	private state: ChatViewState = {
 		messages: [],
@@ -153,6 +151,8 @@ export class ChatView extends FilterViewPane {
 		@IStorageService private readonly storageService: IStorageService,
 		@IRuntimeEventBus private readonly runtimeEventBus: IRuntimeEventBus,
 		@IRuntimeCoordinator private readonly runtimeCoordinator: IRuntimeCoordinator,
+		@IProviderManager private readonly providerManager: IProviderManager,
+		@IModelRegistry private readonly modelRegistry: IModelRegistry,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -160,6 +160,47 @@ export class ChatView extends FilterViewPane {
 		this.createChatStyles();
 		this.loadPersistedState();
 		this.setupEventListeners();
+		this.setupRegistryListeners();
+	}
+
+	private setupRegistryListeners(): void {
+		this._register(this.providerManager.onDidChangeProviders(() => {
+			this.restorePersistedSelection();
+			if (this.providerSelector) {
+				this.updateSelectors();
+			}
+		}));
+
+		this._register(this.modelRegistry.onDidChangeModels(() => {
+			this.restorePersistedSelection();
+			if (this.modelListContainer) {
+				this.updateModelDropdownItems();
+				this.updateModelDropdownTrigger();
+			}
+		}));
+	}
+
+	private restorePersistedSelection(): void {
+		const storedProvider = this.storageService.get(ChatView.PROVIDER_STORE_KEY, StorageScope.APPLICATION);
+		const storedModel = this.storageService.get(ChatView.MODEL_STORE_KEY, StorageScope.APPLICATION);
+
+		if (storedProvider && !this.state.selectedProvider) {
+			const providerStatus = this.providerManager.getProvider(storedProvider);
+			if (providerStatus) {
+				this.state = { ...this.state, selectedProvider: storedProvider };
+			}
+		}
+
+		if (storedModel && !this.state.selectedModel && this.state.selectedProvider) {
+			const providerStatus = this.providerManager.getProvider(this.state.selectedProvider);
+			if (providerStatus) {
+				const models = this.modelRegistry.getModelsByProvider(providerStatus.config.type);
+				const modelExists = models.some(m => m.id === storedModel);
+				if (modelExists) {
+					this.state = { ...this.state, selectedModel: storedModel };
+				}
+			}
+		}
 	}
 
 	private createChatStyles(): void {
@@ -208,6 +249,18 @@ export class ChatView extends FilterViewPane {
 
 			.nutanaa-chat .chat-selector:focus {
 				border-color: var(--vscode-focusBorder, #007fd4);
+			}
+
+			.nutanaa-chat .healthy-provider {
+				color: var(--vscode-testing-iconPassed, #4ec94e);
+			}
+
+			.nutanaa-chat .unhealthy-provider {
+				color: var(--vscode-errorForeground, #f48771);
+			}
+
+			.nutanaa-chat .unavailable-model {
+				color: var(--vscode-disabledForeground, #888888);
 			}
 
 			.nutanaa-chat .chat-action {
@@ -724,6 +777,144 @@ export class ChatView extends FilterViewPane {
 		.nutanaa-chat .chat-bottom-controls .chat-action:hover {
 			background: var(--vscode-toolbar-hoverBackground);
 		}
+
+		.nutanaa-chat .model-dropdown {
+			position: relative;
+			min-width: 120px;
+			flex: 1;
+		}
+
+		.nutanaa-chat .model-dropdown-trigger {
+			background: var(--vscode-dropdown-background);
+			color: var(--vscode-dropdown-foreground);
+			border: 1px solid var(--vscode-dropdown-border);
+			border-radius: 4px;
+			padding: 3px 8px;
+			font-size: 12px;
+			cursor: pointer;
+			outline: none;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 6px;
+			width: 100%;
+			user-select: none;
+		}
+
+		.nutanaa-chat .model-dropdown-trigger:focus {
+			border-color: var(--vscode-focusBorder, #007fd4);
+		}
+
+		.nutanaa-chat .model-dropdown-trigger .chevron {
+			font-size: 10px;
+			opacity: 0.7;
+		}
+
+		.nutanaa-chat .model-dropdown-panel {
+			position: absolute;
+			bottom: 100%;
+			left: 0;
+			right: 0;
+			background: var(--vscode-dropdown-background);
+			border: 1px solid var(--vscode-dropdown-border);
+			border-radius: 4px;
+			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+			z-index: 1000;
+			max-height: 300px;
+			display: flex;
+			flex-direction: column;
+			margin-bottom: 4px;
+		}
+
+		.nutanaa-chat .model-dropdown-search {
+			background: var(--vscode-input-background);
+			color: var(--vscode-input-foreground);
+			border: 1px solid var(--vscode-input-border);
+			border-radius: 3px;
+			padding: 4px 8px;
+			font-size: 12px;
+			outline: none;
+			margin: 4px;
+			width: calc(100% - 8px);
+		}
+
+		.nutanaa-chat .model-dropdown-search:focus {
+			border-color: var(--vscode-focusBorder, #007fd4);
+		}
+
+		.nutanaa-chat .model-dropdown-list {
+			overflow-y: auto;
+			flex: 1;
+			padding: 2px 0;
+		}
+
+		.nutanaa-chat .model-dropdown-group {
+			padding: 4px 8px 2px;
+			font-size: 11px;
+			font-weight: 600;
+			color: var(--vscode-descriptionForeground, #969696);
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+		}
+
+		.nutanaa-chat .model-dropdown-item {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			padding: 4px 8px;
+			cursor: pointer;
+			font-size: 12px;
+			color: var(--vscode-dropdown-foreground);
+		}
+
+		.nutanaa-chat .model-dropdown-item:hover {
+			background: var(--vscode-list-hoverBackground);
+		}
+
+		.nutanaa-chat .model-dropdown-item.active {
+			background: var(--vscode-list-activeSelectionBackground);
+			color: var(--vscode-list-activeSelectionForeground);
+		}
+
+		.nutanaa-chat .model-dropdown-item.unavailable {
+			opacity: 0.5;
+			text-decoration: line-through;
+		}
+
+		.nutanaa-chat .model-dropdown-item-name {
+			flex: 1;
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		.nutanaa-chat .model-dropdown-item-meta {
+			display: flex;
+			gap: 6px;
+			align-items: center;
+			flex-shrink: 0;
+		}
+
+		.nutanaa-chat .model-dropdown-badge {
+			font-size: 10px;
+			padding: 1px 4px;
+			border-radius: 3px;
+			background: var(--vscode-badge-background);
+			color: var(--vscode-badge-foreground);
+		}
+
+		.nutanaa-chat .model-dropdown-empty {
+			padding: 12px;
+			text-align: center;
+			font-size: 12px;
+			color: var(--vscode-descriptionForeground, #969696);
+		}
+
+		.nutanaa-chat .model-dropdown-provider-tag {
+			font-size: 10px;
+			opacity: 0.7;
+		}
 		`;
 	}
 
@@ -862,14 +1053,40 @@ export class ChatView extends FilterViewPane {
 		this.providerSelector = append(this.bottomControlsContainer, $('select.chat-selector'));
 		this._register(addStandardDisposableListener(this.providerSelector as HTMLElement, 'change', () => {
 			const provider = (this.providerSelector as HTMLSelectElement).value;
+			this.state = { ...this.state, selectedProvider: provider, selectedModel: undefined };
+			this.storageService.store(ChatView.PROVIDER_STORE_KEY, provider, StorageScope.APPLICATION, StorageTarget.USER);
 			this.updateSelectors();
-			this.storageService.store('nutanaa.chat.provider', provider, StorageScope.APPLICATION, StorageTarget.USER);
+			this.updateModelDropdownTrigger();
+			this.saveState();
 		}));
 
-		this.modelSelector = append(this.bottomControlsContainer, $('select.chat-selector'));
-		this._register(addStandardDisposableListener(this.modelSelector as HTMLElement, 'change', () => {
-			const model = (this.modelSelector as HTMLSelectElement).value;
-			this.storageService.store('nutanaa.chat.model', model, StorageScope.APPLICATION, StorageTarget.USER);
+		this.modelDropdownContainer = append(this.bottomControlsContainer, $('.model-dropdown'));
+		this.modelDropdownTrigger = append(this.modelDropdownContainer, $('button.model-dropdown-trigger'));
+		this.modelDropdownTrigger.textContent = 'Select model';
+		this._register(addStandardDisposableListener(this.modelDropdownTrigger as HTMLElement, 'click', () => {
+			this.toggleModelDropdown();
+		}));
+
+		this.modelDropdownPanel = append(this.modelDropdownContainer, $('.model-dropdown-panel'));
+		this.modelSearchInput = append(this.modelDropdownPanel, $('input.model-dropdown-search')) as HTMLInputElement;
+		this.modelSearchInput.placeholder = localize('searchModels', 'Search models...');
+		this._register(addStandardDisposableListener(this.modelSearchInput as HTMLElement, 'input', () => {
+			this.filterModelDropdown();
+		}));
+
+		this.modelListContainer = append(this.modelDropdownPanel, $('.model-dropdown-list'));
+		this._register(addStandardDisposableListener(this.modelListContainer as HTMLElement, 'click', (e) => {
+			const target = e.target as HTMLElement;
+			const item = target.closest('.model-dropdown-item') as HTMLElement | null;
+			if (item && item.dataset.modelId && item.dataset.providerType) {
+				this.selectModel(item.dataset.modelId, item.dataset.providerType);
+			}
+		}));
+
+		this._register(addStandardDisposableListener(document, 'click', (e) => {
+			if (this.modelDropdownOpen && !this.modelDropdownContainer.contains(e.target as Node)) {
+				this.closeModelDropdown();
+			}
 		}));
 
 		this.updateSelectors();
@@ -916,6 +1133,8 @@ export class ChatView extends FilterViewPane {
 	private loadPersistedState(): void {
 		const storedMessages = this.storageService.get(ChatView.MESSAGES_STORE_KEY, StorageScope.APPLICATION);
 		const storedInput = this.storageService.get(ChatView.INPUT_STORE_KEY, StorageScope.APPLICATION);
+		const storedProvider = this.storageService.get(ChatView.PROVIDER_STORE_KEY, StorageScope.APPLICATION);
+		const storedModel = this.storageService.get(ChatView.MODEL_STORE_KEY, StorageScope.APPLICATION);
 
 		if (storedMessages) {
 			try {
@@ -928,6 +1147,24 @@ export class ChatView extends FilterViewPane {
 		if (storedInput) {
 			this.state = { ...this.state, inputText: storedInput };
 		}
+
+		if (storedProvider) {
+			const providerStatus = this.providerManager.getProvider(storedProvider);
+			if (providerStatus) {
+				this.state = { ...this.state, selectedProvider: storedProvider };
+			}
+		}
+
+		if (storedModel && this.state.selectedProvider) {
+			const providerStatus = this.providerManager.getProvider(this.state.selectedProvider);
+			if (providerStatus) {
+				const models = this.modelRegistry.getModelsByProvider(providerStatus.config.type);
+				const modelExists = models.some(m => m.id === storedModel);
+				if (modelExists) {
+					this.state = { ...this.state, selectedModel: storedModel };
+				}
+			}
+		}
 	}
 
 	private applyPersistedStateToDom(): void {
@@ -939,6 +1176,12 @@ export class ChatView extends FilterViewPane {
 	public override saveState(): void {
 		this.storageService.store(ChatView.MESSAGES_STORE_KEY, JSON.stringify(this.state.messages), StorageScope.APPLICATION, StorageTarget.USER);
 		this.storageService.store(ChatView.INPUT_STORE_KEY, this.state.inputText, StorageScope.APPLICATION, StorageTarget.USER);
+		if (this.state.selectedProvider) {
+			this.storageService.store(ChatView.PROVIDER_STORE_KEY, this.state.selectedProvider, StorageScope.APPLICATION, StorageTarget.USER);
+		}
+		if (this.state.selectedModel) {
+			this.storageService.store(ChatView.MODEL_STORE_KEY, this.state.selectedModel, StorageScope.APPLICATION, StorageTarget.USER);
+		}
 	}
 
 	private async sendMessage(): Promise<void> {
@@ -1006,6 +1249,8 @@ export class ChatView extends FilterViewPane {
 				maxRetries: 0,
 				workflowId: undefined,
 				workflowNodeId: undefined,
+				provider: this.state.selectedProvider,
+				model: this.state.selectedModel,
 			};
 
 			const response = await this.runtimeCoordinator.executeAgent(request);
@@ -1117,9 +1362,15 @@ export class ChatView extends FilterViewPane {
 	private renderStreamingContent(messageId: string, content: string): void {
 		const contentElement = this.messagesContainer.querySelector(`[data-message-id="${messageId}"]`) as HTMLElement | null;
 		if (contentElement) {
+			const existing = this.markdownDisposables.get(messageId);
+			if (existing) {
+				existing.dispose();
+				this.markdownDisposables.delete(messageId);
+			}
 			clearNode(contentElement);
-			const markdown = this.renderMarkdown(content);
-			contentElement.appendChild(markdown);
+			const rendered = this.renderMarkdown(content);
+			this.markdownDisposables.set(messageId, rendered);
+			contentElement.appendChild(rendered.element);
 			this.attachCodeBlockActions(contentElement, content);
 		}
 	}
@@ -1146,6 +1397,9 @@ export class ChatView extends FilterViewPane {
 	}
 
 	private renderMessages(): void {
+		this.markdownDisposables.forEach(d => d.dispose());
+		this.markdownDisposables.clear();
+
 		clearNode(this.messagesContainer);
 
 		for (const message of this.state.messages) {
@@ -1166,8 +1420,9 @@ export class ChatView extends FilterViewPane {
 			bubble.textContent = message.content;
 		} else if (message.role === 'assistant') {
 			if (message.content) {
-				const markdown = this.renderMarkdown(message.content);
-				bubble.appendChild(markdown);
+				const rendered = this.renderMarkdown(message.content);
+				this.markdownDisposables.set(message.id, rendered);
+				bubble.appendChild(rendered.element);
 				this.attachCodeBlockActions(bubble, message.content);
 			}
 
@@ -1239,12 +1494,12 @@ export class ChatView extends FilterViewPane {
 		});
 	}
 
-	private renderMarkdown(content: string): HTMLElement {
+	private renderMarkdown(content: string): IRenderedMarkdown {
 		const rendered = this.markdownRenderer({
 			value: content,
 			isTrusted: true,
 		});
-		return rendered.element;
+		return rendered;
 	}
 
 	private updateScrollPosition(): void {
@@ -1270,34 +1525,147 @@ export class ChatView extends FilterViewPane {
 	}
 
 	private updateSelectors(): void {
+		const providers = this.providerManager.getAllProviders();
+
 		clearNode(this.providerSelector);
 		const defaultProviderOption = append(this.providerSelector, $('option', {}, 'Select provider'));
 		(defaultProviderOption as HTMLSelectElement).value = '';
 
-		for (const provider of MOCK_PROVIDERS) {
-			const option = append(this.providerSelector, $('option', {}, provider.name));
-			(option as HTMLSelectElement).value = provider.id;
-		}
-
-		clearNode(this.modelSelector);
-		const defaultModelOption = append(this.modelSelector, $('option', {}, 'Select model'));
-		(defaultModelOption as HTMLSelectElement).value = '';
-
-		const selectedProvider = this.state.selectedProvider;
-		if (selectedProvider) {
-			const provider = MOCK_PROVIDERS.find(p => p.id === selectedProvider);
-			if (provider) {
-				for (const model of provider.models) {
-					const option = append(this.modelSelector, $('option', {}, model));
-					(option as HTMLSelectElement).value = model;
-				}
+		for (const status of providers) {
+			const option = append(this.providerSelector, $('option', {}, status.config.name));
+			(option as HTMLSelectElement).value = status.config.name;
+			if (status.health.isHealthy) {
+				option.classList.add('healthy-provider');
+			} else {
+				option.classList.add('unhealthy-provider');
 			}
 		}
 
-		if (!selectedProvider && MOCK_PROVIDERS.length > 0) {
-			this.state = { ...this.state, selectedProvider: MOCK_PROVIDERS[0].id };
-			(this.providerSelector as HTMLSelectElement).value = MOCK_PROVIDERS[0].id;
-			this.updateSelectors();
+		const selectedProvider = this.state.selectedProvider;
+		if (selectedProvider) {
+			(this.providerSelector as HTMLSelectElement).value = selectedProvider;
+		} else if (providers.length > 0) {
+			const firstProvider = providers[0];
+			this.state = { ...this.state, selectedProvider: firstProvider.config.name };
+			(this.providerSelector as HTMLSelectElement).value = firstProvider.config.name;
+		}
+
+		this.updateModelDropdownItems();
+		this.updateModelDropdownTrigger();
+	}
+
+	private toggleModelDropdown(): void {
+		if (this.modelDropdownOpen) {
+			this.closeModelDropdown();
+		} else {
+			this.openModelDropdown();
+		}
+	}
+
+	private openModelDropdown(): void {
+		this.modelDropdownOpen = true;
+		this.modelDropdownPanel.style.display = 'flex';
+		this.updateModelDropdownItems();
+		this.modelSearchInput.value = '';
+		setTimeout(() => this.modelSearchInput.focus(), 0);
+	}
+
+	private closeModelDropdown(): void {
+		this.modelDropdownOpen = false;
+		this.modelDropdownPanel.style.display = 'none';
+	}
+
+	private updateModelDropdownItems(): void {
+		clearNode(this.modelListContainer);
+		const selectedProvider = this.state.selectedProvider;
+		const query = this.modelSearchInput.value.toLowerCase().trim();
+
+		if (!selectedProvider) {
+			append(this.modelListContainer, $('.model-dropdown-empty', {}, localize('noProviderSelected', 'Select a provider first')));
+			return;
+		}
+
+		const providerStatus = this.providerManager.getProvider(selectedProvider);
+		if (!providerStatus) {
+			append(this.modelListContainer, $('.model-dropdown-empty', {}, localize('noProviderSelected', 'Select a provider first')));
+			return;
+		}
+
+		const models = this.modelRegistry.getModelsByProvider(providerStatus.config.type);
+		const filtered = query
+			? models.filter(m => m.name.toLowerCase().includes(query) || m.id.toLowerCase().includes(query))
+			: models;
+
+		if (filtered.length === 0) {
+			append(this.modelListContainer, $('.model-dropdown-empty', {}, localize('noModelsFound', 'No models found')));
+			return;
+		}
+
+		const grouped = new Map<string, typeof filtered>();
+		for (const model of filtered) {
+			const group = grouped.get(model.providerName) ?? [];
+			group.push(model);
+			grouped.set(model.providerName, group);
+		}
+
+		for (const [providerName, groupModels] of grouped) {
+			append(this.modelListContainer, $('.model-dropdown-group', {}, providerName));
+			for (const model of groupModels) {
+				const item = append(this.modelListContainer, $('.model-dropdown-item'));
+				if (!model.available) {
+					item.classList.add('unavailable');
+				}
+				if (this.state.selectedModel === model.id) {
+					item.classList.add('active');
+				}
+				item.dataset.modelId = model.id;
+				item.dataset.providerType = model.provider;
+
+				append(item, $('span.model-dropdown-item-name', {}, model.name));
+
+				const meta = append(item, $('span.model-dropdown-item-meta'));
+				if (model.contextLength > 0) {
+					append(meta, $('span.model-dropdown-badge', {}, `${model.contextLength >= 1000 ? (model.contextLength / 1000) + 'K' : model.contextLength}`));
+				}
+				if (model.capabilities.supportsVision) {
+					append(meta, $('span.model-dropdown-badge', {}, '👁'));
+				}
+				if (model.capabilities.supportsStreaming) {
+					append(meta, $('span.model-dropdown-badge', {}, '⚡'));
+				}
+				if (model.capabilities.supportsFunctionCalling) {
+					append(meta, $('span.model-dropdown-badge', {}, '🔧'));
+				}
+				if (model.capabilities.supportsReasoning) {
+					append(meta, $('span.model-dropdown-badge', {}, '🧠'));
+				}
+			}
+		}
+	}
+
+	private filterModelDropdown(): void {
+		this.updateModelDropdownItems();
+	}
+
+	private selectModel(modelId: string, providerType: string): void {
+		this.state = { ...this.state, selectedModel: modelId };
+		this.storageService.store(ChatView.MODEL_STORE_KEY, modelId, StorageScope.APPLICATION, StorageTarget.USER);
+		this.closeModelDropdown();
+		this.updateModelDropdownTrigger();
+		this.saveState();
+	}
+
+	private updateModelDropdownTrigger(): void {
+		if (!this.state.selectedModel) {
+			this.modelDropdownTrigger.textContent = 'Select model';
+			return;
+		}
+
+		const model = this.modelRegistry.getModel(this.state.selectedModel);
+		if (model) {
+			this.modelDropdownTrigger.textContent = model.name;
+		} else {
+			this.modelDropdownTrigger.textContent = 'Select model';
 		}
 	}
 
@@ -1482,6 +1850,9 @@ export class ChatView extends FilterViewPane {
 		if (this.attachmentInput && this.attachmentInput.parentElement) {
 			this.attachmentInput.parentElement.removeChild(this.attachmentInput);
 		}
+
+		this.markdownDisposables.forEach(d => d.dispose());
+		this.markdownDisposables.clear();
 
 		this.saveState();
 		super.dispose();

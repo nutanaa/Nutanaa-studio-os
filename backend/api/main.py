@@ -42,6 +42,7 @@ from runtime.bootstrap import bootstrap
 from runtime.events.event_bus import Event
 from runtime.orchestration import ExecutionOrchestrator
 from runtime.providers.ollama_provider import OllamaProvider
+from runtime.providers.provider_capability import ProviderCapability
 from runtime.runtime_context import RuntimeContext
 from runtime.services.state_store import StateStore
 from runtime.services.telemetry_service import TelemetryService
@@ -216,7 +217,17 @@ async def execute_agent(name: str, payload: dict) -> dict:
 	"""
 	orchestrator = get_orchestrator()
 	session_id = str(payload.get("sessionId") or uuid4().hex)
-	request = ExecutionRequest(agent_name=name, input_data=payload.get("input", ""))
+	provider_name = payload.get("provider")
+	model_name = payload.get("model")
+	request = ExecutionRequest(
+		agent_name=name,
+		input_data=payload.get("input", ""),
+		provider_name=provider_name,
+		model=model_name,
+	)
+	if provider_name or model_name:
+		request.agent_name = None
+		request.capability = ProviderCapability.TEXT
 	try:
 		_session, result = await orchestrator.execute(request, session_id=session_id)
 	except Exception as exc:  # noqa: BLE001 - surfaced to the caller, not swallowed
@@ -232,6 +243,11 @@ async def list_providers() -> list[dict]:
 	provider's actual, currently-measured health — not a static
 	"Disconnected"/"Not Configured" placeholder."""
 	context = get_context()
+	for record in context.provider_manager.list_records():
+		try:
+			await record.provider.refresh_models()
+		except Exception:  # noqa: BLE001 - provider refresh must not break /providers
+			pass
 	return [
 		{
 			"id": record.name,

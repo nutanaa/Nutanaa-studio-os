@@ -313,4 +313,72 @@ export class ModelRegistry extends Disposable implements IModelRegistry {
 
 		return filtered[0];
 	}
+
+	// ── Backend Sync ─────────────────────────────────────────────────────────────
+
+	syncModels(providerType: ProviderType, modelNames: readonly string[], providerName: string): void {
+		const currentIds = new Set(
+			Array.from(this.models.values())
+				.filter(m => m.provider === providerType)
+				.map(m => m.id)
+		);
+		const newIds = new Set(modelNames);
+
+		for (const id of currentIds) {
+			if (!newIds.has(id)) {
+				this.models.delete(id);
+				const providerModels = this.modelsByProvider.get(providerType);
+				if (providerModels) {
+					providerModels.delete(id);
+					if (providerModels.size === 0) {
+						this.modelsByProvider.delete(providerType);
+					}
+				}
+				if (this.defaultModels.get(providerType) === id) {
+					this.defaultModels.delete(providerType);
+				}
+				if (this.globalDefaultModelId === id) {
+					this.globalDefaultModelId = undefined;
+				}
+			}
+		}
+
+		for (const name of modelNames) {
+			if (!this.models.has(name)) {
+				const model: IModelInfo = {
+					id: name,
+					name: name,
+					provider: providerType,
+					providerName: providerName,
+					contextLength: 0,
+					maxOutputTokens: 0,
+					capabilities: {
+						supportsStreaming: false,
+						supportsFunctionCalling: false,
+						supportsVision: false,
+						supportsAudio: false,
+						supportsEmbedding: false,
+						supportsReasoning: false,
+						maxContextLength: 0,
+						maxOutputTokens: 0,
+						defaultTemperature: 0,
+						supportedModalities: [],
+					},
+					pricing: {
+						inputPer1M: 0,
+						outputPer1M: 0,
+					},
+					defaultTemperature: 0,
+					available: true,
+				};
+				this.models.set(name, model);
+
+				const providerModels = this.modelsByProvider.get(providerType) ?? new Set<string>();
+				providerModels.add(name);
+				this.modelsByProvider.set(providerType, providerModels);
+			}
+		}
+
+		this._onDidChangeModels.fire();
+	}
 }

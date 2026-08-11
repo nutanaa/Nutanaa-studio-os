@@ -179,6 +179,10 @@ export class TimelineView extends FilterViewPane {
 	}
 
 	private renderEvents(): void {
+		if (!this.listContainer) {
+			return;
+		}
+
 		clearNode(this.listContainer);
 
 		const filtered = this.getFilteredEvents();

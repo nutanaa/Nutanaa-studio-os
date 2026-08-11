@@ -132,4 +132,13 @@ export interface IModelRegistry {
 	 * Event fired when default model changes.
 	 */
 	onDidChangeDefaultModel: (listener: (providerType: ProviderType | 'global') => void) => { dispose(): void };
+
+	// ── Backend Sync ───────────────────────────────────────────────────────────
+
+	/**
+	 * Sync models for a provider from backend model name strings.
+	 * Adds new models, removes missing ones. Creates basic IModelInfo entries
+	 * with unknown/default metadata when detailed info is unavailable.
+	 */
+	syncModels(providerType: ProviderType, modelNames: readonly string[], providerName: string): void;
 }

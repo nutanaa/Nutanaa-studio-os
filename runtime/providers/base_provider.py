@@ -132,6 +132,9 @@ class BaseProvider(IProvider, ABC):
     async def list_models(self) -> list[str]:
         return sorted(self._loaded_models or set(self._metadata.models))
 
+    async def refresh_models(self) -> None:
+        """Refresh model list. Default implementation is a no-op."""
+
     async def load_model(self, model_name: str) -> None:
         self._loaded_models.add(model_name)
 

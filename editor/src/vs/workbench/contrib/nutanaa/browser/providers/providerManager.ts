@@ -18,6 +18,7 @@ import {
 import { IProviderManager  } from '../../common/providers/providerManager.js';
 import { IRuntimeEventBus, RuntimeEventType } from '../../common/runtime/runtimeEventBus.js';
 import { IRuntimeStateService } from '../../common/runtime/runtimeState.js';
+import { INutanaaProviderSummary } from '../../common/nutanaa.js';
 
 // Import paths for supported providers
 import { RESTApiProvider } from './restApiProvider.js';
@@ -569,5 +570,67 @@ export class ProviderManager extends Disposable implements IProviderManager {
 		this.providers.clear();
 		this.providerInstances.clear();
 		this.loadCounts.clear();
+	}
+
+	// ── Backend Sync ─────────────────────────────────────────────────────────────
+
+	syncProviderStatuses(summaries: readonly INutanaaProviderSummary[]): void {
+		const currentNames = new Set(this.providers.keys());
+		const newNames = new Set(summaries.map(s => s.id));
+
+		for (const name of currentNames) {
+			if (!newNames.has(name)) {
+				this.providers.delete(name);
+				this.providerInstances.delete(name);
+				this.loadCounts.delete(name);
+				this.stopHealthMonitoring(name);
+			}
+		}
+
+		for (const summary of summaries) {
+			const existing = this.providers.get(summary.id);
+			const health: IProviderHealth = {
+				providerName: summary.id,
+				isHealthy: summary.healthy,
+				lastChecked: Date.now(),
+				latencyMs: existing?.health.latencyMs ?? 0,
+				errorCount: existing?.health.errorCount ?? 0,
+				modelAvailable: summary.models.length > 0,
+			};
+
+			const config: IProviderConfig = {
+				type: summary.type as IProviderConfig['type'],
+				name: summary.id,
+				baseUrl: '',
+				model: summary.activeModel ?? summary.models[0] ?? '',
+				capabilities: {
+					supportsStreaming: false,
+					supportsFunctionCalling: false,
+					supportsVision: false,
+					supportsAudio: false,
+					supportsEmbedding: false,
+					supportsReasoning: false,
+					maxContextLength: 0,
+					maxOutputTokens: 0,
+					defaultTemperature: 0,
+					supportedModalities: [],
+				},
+				timeoutMs: 0,
+				maxRetries: 0,
+				enabled: summary.status !== 'unhealthy',
+				priority: 0,
+			};
+
+			const status: IProviderStatus = {
+				config,
+				health,
+				isSelected: existing?.isSelected ?? false,
+				currentLoad: existing?.currentLoad ?? 0,
+			};
+
+			this.providers.set(summary.id, status);
+		}
+
+		this._onDidChangeProviders.fire();
 	}
 }

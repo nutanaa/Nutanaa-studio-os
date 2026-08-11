@@ -52,6 +52,7 @@ import { RuntimeCoordinator } from './runtime/runtimeCoordinator.js';
 
 import { IProviderManager } from '../common/providers/providerManager.js';
 import { IModelRegistry } from '../common/providers/modelRegistry.js';
+import { IProviderModelSyncService } from '../common/providers/providerModelSyncService.js';
 import { IPromptManager } from '../common/tools/promptManager.js';
 import { IContextBuilder } from '../common/memory/contextBuilder.js';
 import { IMemoryManager } from '../common/memory/memoryManager.js';
@@ -60,6 +61,7 @@ import { IToolManager } from '../common/tools/toolManager.js';
 
 import { ProviderManager } from './providers/providerManager.js';
 import { ModelRegistry } from './providers/modelRegistry.js';
+import { ProviderModelSyncService } from './providers/providerModelSyncService.js';
 import { PromptManager } from './tools/promptManager.js';
 import { ContextBuilder } from './memory/contextBuilder.js';
 import { MemoryManager } from './memory/memoryManager.js';
@@ -207,6 +209,13 @@ registerSingleton(
 registerSingleton(
 	IModelRegistry,
 	ModelRegistry,
+	InstantiationType.Delayed
+);
+
+// ProviderModelSyncService injects: IRuntimeStateService, IProviderManager, IModelRegistry, INutanaaRuntimeConnectionService, ILogService.
+registerSingleton(
+	IProviderModelSyncService,
+	diCast(ProviderModelSyncService),
 	InstantiationType.Delayed
 );
 
@@ -482,6 +491,9 @@ class NutanaaContribution extends Disposable implements IWorkbenchContribution {
 		@IModelRegistry
 		_modelRegistry: IModelRegistry,
 
+		@IProviderModelSyncService
+		_providerModelSyncService: IProviderModelSyncService,
+
 		@IPromptManager
 		_promptManager: IPromptManager,
 
@@ -577,6 +589,7 @@ class NutanaaContribution extends Disposable implements IWorkbenchContribution {
 		void _workflowEngine;
 		void _providerManager;
 		void _modelRegistry;
+		void _providerModelSyncService;
 		void _promptManager;
 		void _contextBuilder;
 		void _memoryManager;
@@ -615,7 +628,9 @@ class NutanaaContribution extends Disposable implements IWorkbenchContribution {
 		void runtimeCoordinator.start();
 
 		// Establish HTTP + WebSocket connection to the Nutanaa Runtime backend.
-		void runtimeConnectionService.connect();
+		void runtimeConnectionService.connect().then(() => {
+			void _providerModelSyncService.syncFromBackend();
+		});
 	}
 }
 

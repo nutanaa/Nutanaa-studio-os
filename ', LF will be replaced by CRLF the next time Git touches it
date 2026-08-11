@@ -1,0 +1,13 @@
+warning: in the working copy of 'editor/src/vs/workbench/contrib/nutanaa/browser/agents/agentDispatcher.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'editor/src/vs/workbench/contrib/nutanaa/browser/nutanaa.contribution.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'editor/src/vs/workbench/contrib/nutanaa/browser/providers/modelRegistry.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'editor/src/vs/workbench/contrib/nutanaa/browser/providers/providerManager.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'editor/src/vs/workbench/contrib/nutanaa/browser/views/chatView.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'editor/src/vs/workbench/contrib/nutanaa/browser/views/logsView.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'editor/src/vs/workbench/contrib/nutanaa/browser/views/notificationsView.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'editor/src/vs/workbench/contrib/nutanaa/browser/views/providerExplorerView.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'editor/src/vs/workbench/contrib/nutanaa/browser/views/timelineView.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'editor/src/vs/workbench/contrib/nutanaa/common/providers/modelRegistry.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'editor/src/vs/workbench/contrib/nutanaa/common/providers/providerManager.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'editor/src/vs/workbench/contrib/nutanaa/models/executionModel.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'runtime/providers/ollama_provider.py', LF will be replaced by CRLF the next time Git touches it

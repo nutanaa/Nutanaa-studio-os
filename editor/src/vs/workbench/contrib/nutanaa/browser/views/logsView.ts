@@ -190,6 +190,10 @@ export class LogsView extends FilterViewPane {
 	}
 
 	private renderLogs(): void {
+		if (!this.listContainer) {
+			return;
+		}
+
 		const filtered = this.getFilteredLogs();
 
 		if (filtered.length === 0) {
@@ -403,6 +407,9 @@ export class LogsView extends FilterViewPane {
 
 		// Only append if log passes current filter
 		if (this.logPassesFilter(newLog)) {
+			if (!this.listContainer) {
+				return;
+			}
 			const logElement = this.createLogElement(newLog);
 			this.listContainer.appendChild(logElement);
 

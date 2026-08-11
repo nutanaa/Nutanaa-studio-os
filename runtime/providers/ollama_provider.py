@@ -137,6 +137,32 @@ class OllamaProvider(BaseProvider):
 			details={"installedModels": installed, "activeModel": self._model},
 		)
 
+	async def refresh_models(self) -> None:
+		"""Re-query Ollama for the currently installed models and update
+		provider metadata. Preserves the existing model list on failure."""
+		if self._client is None:
+			return
+		try:
+			response = await self._client.get("/api/tags")
+			response.raise_for_status()
+			data = response.json()
+			installed = [
+				model.get("name", "")
+				for model in data.get("models", [])
+				if model.get("name")
+			]
+		except (httpx.HTTPError, OSError):
+			return
+
+		if not installed:
+			return
+
+		if self._model not in installed:
+			self._model = installed[0]
+
+		self._metadata.models = tuple(installed)
+		self._loaded_models = set(installed)
+
 	async def shutdown(self) -> None:
 		await super().shutdown()
 		if self._client is not None:

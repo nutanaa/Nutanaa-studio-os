@@ -213,10 +213,17 @@ export class AgentDispatcher extends Disposable implements IAgentDispatcher {
 		_ctx: IExecutionContext,
 		request: IAgentExecutionRequest,
 	): Promise<unknown> {
-		const result = await this.connectionService.executeAgent(request.agentId, {
+		const payload: Record<string, unknown> = {
 			input: request.payload.input ?? request.payload.context ?? '',
 			context: request.payload.context,
-		});
+		};
+		if (request.provider) {
+			payload.provider = request.provider;
+		}
+		if (request.model) {
+			payload.model = request.model;
+		}
+		const result = await this.connectionService.executeAgent(request.agentId, payload);
 
 		if (!result.success) {
 			throw new Error(result.error || 'Agent execution failed');

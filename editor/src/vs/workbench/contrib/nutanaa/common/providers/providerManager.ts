@@ -12,6 +12,7 @@ import {
 	IProviderRequest,
 	IProviderSelectionResult,
 } from '../../models/aiCore.js';
+import { INutanaaProviderSummary } from '../../common/nutanaa.js';
 
 /**
  * Service responsible for managing AI providers in Nutanaa Studio OS.
@@ -177,4 +178,13 @@ export interface IProviderManager {
 	 * Event fired when provider is registered or unregistered.
 	 */
 	onDidChangeProviders: (listener: () => void) => { dispose(): void };
+
+	// ── Backend Sync ───────────────────────────────────────────────────────────
+
+	/**
+	 * Sync provider statuses from backend summaries.
+	 * Adds new providers, updates existing ones, removes missing ones.
+	 * Does not create provider instances or start health monitoring.
+	 */
+	syncProviderStatuses(summaries: readonly INutanaaProviderSummary[]): void;
 }

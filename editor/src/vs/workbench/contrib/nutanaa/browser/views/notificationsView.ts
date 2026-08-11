@@ -128,6 +128,10 @@ export class NotificationsView extends FilterViewPane {
 	}
 
 	private renderNotifications(): void {
+		if (!this.listContainer) {
+			return;
+		}
+
 		const visible = this.getVisibleNotifications();
 
 		if (visible.length === 0) {

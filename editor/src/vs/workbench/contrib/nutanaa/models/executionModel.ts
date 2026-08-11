@@ -62,6 +62,10 @@ export interface IAgentExecutionRequest {
 	/** Optional parent workflow context. */
 	readonly workflowId: string | undefined;
 	readonly workflowNodeId: string | undefined;
+	/** Optional explicit provider selection. */
+	readonly provider?: string;
+	/** Optional explicit model selection. */
+	readonly model?: string;
 }
 
 export interface IAgentExecutionResponse {

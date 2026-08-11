@@ -113,6 +113,9 @@ class IProvider(ABC):
         """Return registered or embedded model names."""
         return list(self.metadata.models)
 
+    async def refresh_models(self) -> None:
+        """Refresh the provider's available model list. Default: no-op."""
+
     async def load_model(self, model_name: str) -> None:
         """Load a model into provider memory."""
         _ = model_name

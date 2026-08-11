@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { append, $, addStandardDisposableListener } from '../../../../../base/browser/dom.js';
+import { append, $, addStandardDisposableListener, clearNode } from '../../../../../base/browser/dom.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
@@ -61,6 +61,17 @@ export class ProviderExplorerView extends FilterViewPane {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
 		this.loadSelectedProvider();
+		this.setupRegistryListeners();
+	}
+
+	private setupRegistryListeners(): void {
+		this._register(this.providerManager.onDidChangeProviders(() => {
+			this.loadProviders();
+			if (this.container) {
+				this.renderProvidersList();
+				this.renderProviderDetails();
+			}
+		}));
 	}
 
 	protected override renderBody(container: HTMLElement): void {
@@ -72,10 +83,9 @@ export class ProviderExplorerView extends FilterViewPane {
 		this.container.classList.add('nutanaa-provider-explorer');
 
 		this.renderToolbar();
+		this.loadProviders();
 		this.renderProvidersList();
 		this.renderProviderDetails();
-
-		this.loadProviders();
 	}
 
 	private renderToolbar(): void {
@@ -105,7 +115,11 @@ export class ProviderExplorerView extends FilterViewPane {
 	}
 
 	private renderProvidersList(): void {
-		this.listContainer = append(this.container, $('.providers-list'));
+		if (this.listContainer) {
+			clearNode(this.listContainer);
+		} else {
+			this.listContainer = append(this.container, $('.providers-list'));
+		}
 
 		if (this.providers.length === 0) {
 			append(this.listContainer, $('div.empty-state', {}, localize('noProviders', 'No providers configured')));
@@ -166,7 +180,11 @@ export class ProviderExplorerView extends FilterViewPane {
 	}
 
 	private renderProviderDetails(): void {
-		this.detailsContainer = append(this.container, $('.provider-details'));
+		if (this.detailsContainer) {
+			clearNode(this.detailsContainer);
+		} else {
+			this.detailsContainer = append(this.container, $('.provider-details'));
+		}
 
 		const selected = this.providers.find(p => p.name === this.selectedProvider);
 
@@ -294,9 +312,6 @@ export class ProviderExplorerView extends FilterViewPane {
 			isSelected: status.isSelected,
 			isEnabled: status.config.enabled,
 		}));
-
-		this.renderProvidersList();
-		this.renderProviderDetails();
 	}
 
 	private loadSelectedProvider(): void {
@@ -313,6 +328,8 @@ export class ProviderExplorerView extends FilterViewPane {
 			this.storageService.store(ProviderExplorerView.SELECTED_PROVIDER_KEY, providerName, StorageScope.APPLICATION, StorageTarget.USER);
 
 			this.loadProviders();
+			this.renderProvidersList();
+			this.renderProviderDetails();
 			this.runtimeEventBus.fire({
 				type: RuntimeEventType.ProviderChanged,
 				timestamp: Date.now(),
@@ -326,6 +343,8 @@ export class ProviderExplorerView extends FilterViewPane {
 		if (provider) {
 			this.providerManager.updateProvider(providerName, { enabled: !provider.isEnabled });
 			this.loadProviders();
+			this.renderProvidersList();
+			this.renderProviderDetails();
 		}
 	}
 
@@ -340,6 +359,8 @@ export class ProviderExplorerView extends FilterViewPane {
 				this.selectedProvider = undefined;
 			}
 			this.loadProviders();
+			this.renderProvidersList();
+			this.renderProviderDetails();
 		}
 	}
 
@@ -350,6 +371,8 @@ export class ProviderExplorerView extends FilterViewPane {
 	private refreshProviders(): void {
 		this.providerManager.refreshAllHealth().then(() => {
 			this.loadProviders();
+			this.renderProvidersList();
+			this.renderProviderDetails();
 		});
 	}
 
