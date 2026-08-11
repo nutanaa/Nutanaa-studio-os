@@ -23,7 +23,7 @@ import {
 	NUTANAA_AGENT_EXPLORER_VIEW_ID,
 } from '../common/nutanaa.js';
 
-import { IRuntimeStateService } from '../common/runtimeState.js';
+import { IRuntimeStateService } from '../common/runtime/runtimeState.js';
 import { nutanaaRefreshIcon } from './nutanaaIcons.js';
 import { NutanaaViewId } from './constants.js';
 
@@ -236,14 +236,12 @@ export class NutanaaViews extends Disposable {
 			this.instantiationService.createInstance(TreeView, NUTANAA_AGENT_EXPLORER_VIEW_ID, name.value)
 		);
 
-		const dataProvider = this._register(
-			this.instantiationService.createInstance(
-				// Dynamic import to avoid circular dependencies
-				() => import('./agentExplorerViewDataProvider.js').then(m => new m.AgentExplorerViewDataProvider())
-			)
-		);
 		treeView.showRefreshAction = true;
-		treeView.dataProvider = dataProvider;
+
+		import('./agents/agentExplorerViewDataProvider.js').then(m => {
+			const dataProvider = this._register(this.instantiationService.createInstance(m.AgentExplorerViewDataProvider as any));
+			treeView.dataProvider = dataProvider;
+		});
 
 		const descriptor: ITreeViewDescriptor = {
 			id: NUTANAA_AGENT_EXPLORER_VIEW_ID,
@@ -289,28 +287,26 @@ export class NutanaaViews extends Disposable {
 			this.instantiationService.createInstance(TreeView, viewId, name.value)
 		);
 
-		const dataProviderModule = dataProviderName.replace('DataProvider', '');
-
 		let dataProviderPromise: Promise<unknown>;
 		switch (dataProviderName) {
 			case 'workflowExplorerDataProvider':
-				dataProviderPromise = import('./workflowExplorerDataProvider.js').then(m => new m.WorkflowExplorerDataProvider());
+				dataProviderPromise = import('./workflow/workflowExplorerDataProvider.js').then(m => this.instantiationService.createInstance(m.WorkflowExplorerDataProvider as any));
 				break;
 			case 'taskExplorerDataProvider':
-				dataProviderPromise = import('./taskExplorerDataProvider.js').then(m => new m.TaskExplorerDataProvider());
+				dataProviderPromise = import('./workflow/taskExplorerDataProvider.js').then(m => this.instantiationService.createInstance(m.TaskExplorerDataProvider as any));
 				break;
 			case 'projectKnowledgeDataProvider':
-				dataProviderPromise = import('./projectKnowledgeDataProvider.js').then(m => new m.ProjectKnowledgeDataProvider());
+				dataProviderPromise = import('./memory/projectKnowledgeDataProvider.js').then(m => this.instantiationService.createInstance(m.ProjectKnowledgeDataProvider as any));
 				break;
 			case 'projectExplorerDataProvider':
-				dataProviderPromise = import('./projectExplorerDataProvider.js').then(m => new m.ProjectExplorerDataProvider());
+				dataProviderPromise = import('./projectExplorerDataProvider.js').then(m => this.instantiationService.createInstance(m.ProjectExplorerDataProvider as any));
 				break;
 			default:
 				dataProviderPromise = Promise.resolve();
 		}
 
 		dataProviderPromise.then(dp => {
-			treeView.dataProvider = dp;
+			treeView.dataProvider = dp as any;
 		});
 
 		const descriptor: ITreeViewDescriptor = {

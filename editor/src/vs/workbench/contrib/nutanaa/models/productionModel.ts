@@ -103,6 +103,7 @@ export interface IPerformanceMetrics {
 	readonly queueStats: IQueueMetrics;
 	readonly providerStats: IProviderMetrics;
 	readonly tokenUsage: ITokenUsageMetrics;
+	readonly timestamp: number;
 }
 
 export interface ILatencyMetrics {
@@ -153,10 +154,10 @@ export interface ITraceSpan {
 	readonly name: string;
 	readonly type: 'request' | 'workflow' | 'agent' | 'provider' | 'tool' | 'internal';
 	readonly startTime: number;
-	readonly endTime: number;
-	readonly duration: number;
-	readonly status: 'ok' | 'error' | 'cancelled';
-	readonly attributes: Record<string, unknown>;
+	endTime: number;
+	duration: number;
+	status: 'ok' | 'error' | 'cancelled';
+	attributes: Record<string, unknown>;
 	readonly events: ITraceEvent[];
 	readonly children: ITraceSpan[];
 }
@@ -170,12 +171,12 @@ export interface ITraceEvent {
 export interface ITrace {
 	readonly id: string;
 	readonly type: 'request' | 'workflow' | 'agent' | 'provider' | 'tool';
-	 readonly rootSpan: ITraceSpan;
-	 readonly spans: ITraceSpan[];
-	 readonly startTime: number;
-	 readonly endTime: number;
-	 readonly status: 'ok' | 'error' | 'cancelled';
-	 readonly correlationId: string;
+	readonly rootSpan: ITraceSpan;
+	readonly spans: ITraceSpan[];
+	readonly startTime: number;
+	endTime: number;
+	status: 'ok' | 'error' | 'cancelled';
+	readonly correlationId: string;
 }
 
 export interface ITraceQuery {
@@ -242,9 +243,9 @@ export interface IPerformanceProfile {
 	readonly name: string;
 	readonly type: 'startup' | 'memory' | 'cpu' | 'rendering' | 'execution';
 	readonly startTime: number;
-	readonly endTime: number;
-	readonly duration: number;
-	readonly samples: IPerformanceSample[];
+	endTime: number;
+	duration: number;
+	samples: IPerformanceSample[];
 }
 
 export interface IPerformanceSample {
@@ -421,12 +422,12 @@ export interface ICrashRecovery {
 export type UpdateChannel = 'stable' | 'preview' | 'nightly';
 
 export interface IUpdateConfig {
-	readonly channel: UpdateChannel;
-	readonly autoCheck: boolean;
-	readonly autoDownload: boolean;
-	readonly autoInstall: boolean;
-	readonly lastCheck: number;
-	readonly lastCheckVersion: string;
+	channel: UpdateChannel;
+	autoCheck: boolean;
+	autoDownload: boolean;
+	autoInstall: boolean;
+	lastCheck: number;
+	lastCheckVersion: string;
 }
 
 export interface IUpdateInfo {
@@ -442,11 +443,11 @@ export interface IUpdateInfo {
 }
 
 export interface IUpdateProgress {
-	readonly state: 'idle' | 'checking' | 'downloading' | 'installing' | 'restarting';
+	state: 'idle' | 'checking' | 'downloading' | 'installing' | 'restarting';
 	readonly version: string;
-	readonly progress: number;
-	 readonly speed: number;
-	readonly ETA: number;
+	progress: number;
+	speed: number;
+	ETA: number;
 }
 
 // ── Configuration Types ─────────────────────────────────────────────────────

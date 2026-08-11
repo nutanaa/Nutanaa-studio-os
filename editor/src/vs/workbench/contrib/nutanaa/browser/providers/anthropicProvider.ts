@@ -19,6 +19,7 @@ interface ILLMProvider {
 
 export class AnthropicProvider implements ILLMProvider {
 	readonly config: IProviderConfig;
+	readonly provider: unknown = this;
 	private connected = false;
 
 	constructor(config: IProviderConfig) {
@@ -34,8 +35,8 @@ export class AnthropicProvider implements ILLMProvider {
 			const response = await fetch(`${this.config.baseUrl}/messages`, {
 				method: 'HEAD',
 				headers: {
-					'Authorization': `Bearer ${this.config.apiKey}`,
-					'x-api-key': this.config.apiKey,
+					'Authorization': `Bearer ${this.config.apiKey ?? ''}`,
+					'x-api-key': this.config.apiKey ?? '',
 					'Content-Type': 'application/json',
 				},
 			});
@@ -59,8 +60,8 @@ export class AnthropicProvider implements ILLMProvider {
 			const response = await fetch(`${this.config.baseUrl}/messages`, {
 				method: 'HEAD',
 				headers: {
-					'Authorization': `Bearer ${this.config.apiKey}`,
-					'x-api-key': this.config.apiKey,
+					'Authorization': `Bearer ${this.config.apiKey ?? ''}`,
+					'x-api-key': this.config.apiKey ?? '',
 					'Content-Type': 'application/json',
 					'anthropic-version': '2023-06-01',
 				},
@@ -76,7 +77,7 @@ export class AnthropicProvider implements ILLMProvider {
 				errorCount: response.ok ? 0 : 1,
 				modelAvailable: response.ok,
 			};
-		} catch (err) {
+		} catch {
 			return {
 				providerName: this.config.name,
 				isHealthy: false,
@@ -102,8 +103,8 @@ export class AnthropicProvider implements ILLMProvider {
 		const response = await fetch(url, {
 			method: 'POST',
 			headers: {
-				'Authorization': `Bearer ${this.config.apiKey}`,
-				'x-api-key': this.config.apiKey,
+				'Authorization': `Bearer ${this.config.apiKey ?? ''}`,
+				'x-api-key': this.config.apiKey ?? '',
 				'Content-Type': 'application/json',
 				'anthropic-version': '2023-06-01',
 			},
@@ -165,8 +166,8 @@ export class AnthropicProvider implements ILLMProvider {
 		const response = await fetch(url, {
 			method: 'POST',
 			headers: {
-				'Authorization': `Bearer ${this.config.apiKey}`,
-				'x-api-key': this.config.apiKey,
+				'Authorization': `Bearer ${this.config.apiKey ?? ''}`,
+				'x-api-key': this.config.apiKey ?? '',
 				'Content-Type': 'application/json',
 				'anthropic-version': '2023-06-01',
 			},

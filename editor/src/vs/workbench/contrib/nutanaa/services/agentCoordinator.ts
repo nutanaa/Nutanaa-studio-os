@@ -5,9 +5,9 @@
 
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { IAgentStateService } from '../common/agentStateService.js';
+import { IAgentStateService } from '../common/agents/agentStateService.js';
 import { IAgentExecutionEngine } from '../services/agentExecutionEngine.js';
-import { AgentQueue } from '../common/agentQueue.js';
+import { AgentQueue } from '../common/agents/agentQueue.js';
 import { IAgentTask } from '../models/agentExecutionModel.js';
 import { AgentPriority } from '../models/agentModel.js';
 

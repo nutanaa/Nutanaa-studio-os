@@ -3,7 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ILogService } from '../../../../platform/log/common/log.js';
 import {
 	IProviderConfig,
 	IProviderHealth,
@@ -20,6 +19,7 @@ interface ILLMProvider {
 
 export class OpenAIProvider implements ILLMProvider {
 	readonly config: IProviderConfig;
+	readonly provider: unknown = this;
 	private connected = false;
 
 	constructor(config: IProviderConfig) {
@@ -193,3 +193,5 @@ export class OpenAIProvider implements ILLMProvider {
 		return data.choices?.[0]?.message?.content ?? '';
 	}
 }
+
+

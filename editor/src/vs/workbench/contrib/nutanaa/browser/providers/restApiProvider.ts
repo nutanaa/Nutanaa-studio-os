@@ -30,6 +30,7 @@ interface ILLMProvider {
 
 export class RESTApiProvider implements ILLMProvider {
 	readonly config: RESTApiProviderConfig;
+	readonly provider: unknown = this;
 	private connected = false;
 
 	constructor(config: IProviderConfig) {
@@ -206,3 +207,4 @@ export class RESTApiProvider implements ILLMProvider {
 		}
 	}
 }
+

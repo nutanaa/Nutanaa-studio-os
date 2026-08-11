@@ -162,8 +162,8 @@ export interface IContextEntry {
 	readonly importance: number;
 	readonly source: string;
 	readonly timestamp: number;
-	readonly tokenCount: number;
-	 readonly metadata?: Record<string, unknown>;
+	tokenCount: number;
+	readonly metadata?: Record<string, unknown>;
 }
 
 export interface IContextBuilderOptions {
@@ -265,6 +265,7 @@ export interface IBatchEmbeddingRequest {
 	readonly texts: string[];
 	readonly chunkIds: string[];
 	readonly priority: number;
+	readonly batchSize?: number;
 }
 
 export interface ISimilaritySearchResult {
@@ -320,6 +321,33 @@ export interface IMemoryStats {
 	 readonly totalTokens: number;
 	 readonly oldestEntry: number;
 	 readonly newestEntry: number;
+}
+
+export interface IEmbeddingStats {
+	readonly totalEmbeddings: number;
+	readonly totalChunks: number;
+	readonly averageDimensions: number;
+}
+
+export interface IMemoryState {
+	 readonly memories: Map<string, IMemoryEntry>;
+	 readonly stats: IMemoryStats;
+	 readonly embeddingStats: IEmbeddingStats;
+	 readonly recent?: IMemoryEntry[];
+}
+
+export interface IProviderState {
+	 readonly config: IProviderConfig;
+	 readonly health: IProviderHealth;
+	 readonly summary: string;
+	 readonly lastCheckedAt: number;
+	 readonly memoryUpdates?: {
+		added?: IMemoryEntry[];
+		updated?: IMemoryEntry[];
+		deleted?: string[];
+		cleared?: MemoryStorageType;
+		stats?: IMemoryStats;
+	 };
 }
 
 // ── Event Payloads for RuntimeEventBus ─────────────────────────────────────────────────

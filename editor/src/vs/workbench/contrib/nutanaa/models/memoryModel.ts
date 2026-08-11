@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-export type MemoryType = 'workspace' | 'conversation' | 'agent' | 'project' | 'knowledge';
+export type MemoryType = 'workspace' | 'conversation' | 'agent' | 'project' | 'knowledge' | 'global' | 'character' | 'story' | 'prompt';
 
 export interface IMemoryEntry {
 	readonly id: string;

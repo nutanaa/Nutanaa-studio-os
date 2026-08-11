@@ -3,23 +3,25 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
-import { Emitter, Event } from '../../../../base/common/event.js';
-import { append, $, addStandardDisposableListener } from '../../../../base/browser/dom.js';
-import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
-import { ILogService } from '../../../../platform/log/common/log.js';
-import { IThemeService } from '../../../../platform/theme/common/themeService.js';
-import { IStorageService } from '../../../../platform/storage/common/storage.js';
-import { IHoverService } from '../../../../platform/hover/browser/hover.js';
-import { KeybindingService } from '../../../../platform/keybinding/browser/keybindingService.js';
-import { ViewPane, ViewPaneOptions } from '../../../browser/parts/views/viewPane.js';
-import { IRuntimeEventBus, RuntimeEventType } from '../../common/runtimeEventBus.js';
-import { IRuntimeStateService } from '../../common/runtimeState.js';
+import { Emitter } from '../../../../../base/common/event.js';
+import { append, $, clearNode, addStandardDisposableListener } from '../../../../../base/browser/dom.js';
+import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
+import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
+import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
+import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
+import { IViewDescriptorService } from '../../../../common/views.js';
+import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
+import { FilterViewPane, IFilterViewPaneOptions } from '../../../../browser/parts/views/viewPane.js';
+import { IRuntimeEventBus } from '../../common/runtime/runtimeEventBus.js';
+import { RuntimeEventType } from '../../common/runtime/runtimeEvents.js';
+import { AgentEvent, LogEvent, RuntimeEvent } from '../../common/runtime/runtimeEvent.js';
 import { ILogEntry, ILogsFilter, LogLevel } from '../../models/studioModel.js';
-import { localize } from '../../../../nls.js';
-import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { localize } from '../../../../../nls.js';
+import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 
 /**
  * Logs Explorer View for Nutanaa Studio OS.
@@ -32,7 +34,7 @@ import { ICommandService } from '../../../../platform/commands/common/commands.j
  * - Auto-scroll toggle
  * - Log grouping
  */
-export class LogsView extends ViewPane {
+export class LogsView extends FilterViewPane {
 
 	private static readonly LOGS_STORE_KEY = 'nutanaa.logs';
 	private static readonly FILTER_STATE_KEY = 'nutanaa.logs.filter';
@@ -42,7 +44,7 @@ export class LogsView extends ViewPane {
 	public readonly onDidScrollToBottom = this._onDidScrollToBottom.event;
 
 	private container!: HTMLElement;
-	private filterContainer!: HTMLElement;
+	private logsFilterContainer!: HTMLElement;
 	private searchContainer!: HTMLElement;
 	private listContainer!: HTMLElement;
 	private scrollContainer!: HTMLElement;
@@ -53,25 +55,22 @@ export class LogsView extends ViewPane {
 	private autoScroll: boolean = true;
 	private isAtBottom: boolean = true;
 
-	private readonly _register: DisposableStore;
-
 	constructor(
-		options: ViewPaneOptions,
-		@IInstantiationService instantiationService: IInstantiationService,
-		@IContextViewService contextViewService: IContextViewService,
-		@ILogService logService: ILogService,
-		@IThemeService themeService: IThemeService,
-		@IStorageService storageService: IStorageService,
-		@IHoverService hoverService: IHoverService,
-		@IKeybindingService keybindingService: KeybindingService,
-		@IRuntimeEventBus private readonly runtimeEventBus: IRuntimeEventBus,
-		@IRuntimeStateService private readonly runtimeStateService: IRuntimeStateService,
+		options: IFilterViewPaneOptions,
+		@IKeybindingService keybindingService: IKeybindingService,
+		@IContextMenuService contextMenuService: IContextMenuService,
 		@IConfigurationService configurationService: IConfigurationService,
-		@ICommandService private readonly commandService: ICommandService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
+		@IInstantiationService instantiationService: IInstantiationService,
+		@IOpenerService openerService: IOpenerService,
+		@IThemeService themeService: IThemeService,
+		@IHoverService hoverService: IHoverService,
+@IStorageService private readonly storageService: IStorageService,
+		@ILogService private readonly logService: ILogService,
+		@IRuntimeEventBus private readonly runtimeEventBus: IRuntimeEventBus,
 	) {
-		super(options, instantiationService, contextViewService, configurationService, keybindingService, themeService, storageService, logService, hoverService);
-
-		this._register = new DisposableStore();
+		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
 		this.loadLogs();
 		this.loadFilterState();
@@ -80,6 +79,9 @@ export class LogsView extends ViewPane {
 
 	protected override renderBody(container: HTMLElement): void {
 		this.container = container;
+	}
+
+	protected layoutBodyContent(height: number, width: number): void {
 		this.container.classList.add('nutanaa-logs');
 
 		this.renderFilterBar();
@@ -115,7 +117,7 @@ export class LogsView extends ViewPane {
 	}
 
 	private renderFilterBar(): void {
-		this.filterContainer = append(this.container, $('.logs-filter'));
+		this.logsFilterContainer = append(this.container, $('.logs-filter'));
 
 		const levels: Array<{ level: LogLevel; label: string; icon: string }> = [
 			{ level: 'error', label: 'Error', icon: '❌' },
@@ -125,36 +127,36 @@ export class LogsView extends ViewPane {
 		];
 
 		for (const level of levels) {
-			const button = append(this.filterContainer, $(`.filter-toggle${this.isLevelFiltered(level.level) ? ' active' : ''}`));
+			const button = append(this.logsFilterContainer, $(`.filter-toggle${this.isLevelFiltered(level.level) ? ' active' : ''}`));
 			button.title = level.label;
-			button.innerHTML = level.icon;
-			button.dataset.level = level.level;
+			button.textContent = level.icon;
+			(button as HTMLElement).dataset.level = level.level;
 
-			this._register(addStandardDisposableListener(button, 'click', () => {
+			this._register(addStandardDisposableListener(button as HTMLElement, 'click', () => {
 				this.toggleLevelFilter(level.level);
 			}));
 		}
 
 		// Auto-scroll toggle
-		const autoScrollBtn = append(this.filterContainer, $('button.auto-scroll-toggle.active'));
+		const autoScrollBtn = append(this.logsFilterContainer, $('button.auto-scroll-toggle.active'));
 		autoScrollBtn.title = localize('autoScroll', 'Auto-scroll');
-		autoScrollBtn.innerHTML = '📜';
-		this._register(addStandardDisposableListener(autoScrollBtn, 'click', () => {
+		autoScrollBtn.textContent = '📜';
+		this._register(addStandardDisposableListener(autoScrollBtn as HTMLElement, 'click', () => {
 			this.autoScroll = !this.autoScroll;
 			autoScrollBtn.classList.toggle('active', this.autoScroll);
 		}));
 
 		// Clear logs button
-		const clearButton = append(this.filterContainer, $('button.clear-logs', {}, '🗑'));
+		const clearButton = append(this.logsFilterContainer, $('button.clear-logs', {}, '🗑'));
 		clearButton.title = localize('clearLogs', 'Clear Logs');
-		this._register(addStandardDisposableListener(clearButton, 'click', () => {
+		this._register(addStandardDisposableListener(clearButton as HTMLElement, 'click', () => {
 			this.clearLogs();
 		}));
 
 		// Download button
-		const downloadButton = append(this.filterContainer, $('button.download-logs', {}, '⬇'));
+		const downloadButton = append(this.logsFilterContainer, $('button.download-logs', {}, '⬇'));
 		downloadButton.title = localize('downloadLogs', 'Download Logs');
-		this._register(addStandardDisposableListener(downloadButton, 'click', () => {
+		this._register(addStandardDisposableListener(downloadButton as HTMLElement, 'click', () => {
 			this.downloadLogs();
 		}));
 	}
@@ -165,8 +167,8 @@ export class LogsView extends ViewPane {
 		const searchInput = append(this.searchContainer, $('input.search-input', {
 			placeholder: localize('searchLogs', 'Search logs...'),
 		}));
-		this._register(addStandardDisposableListener(searchInput, 'input', () => {
-			this.searchQuery = searchInput.value;
+		this._register(addStandardDisposableListener(searchInput as HTMLElement, 'input', () => {
+			this.searchQuery = (searchInput as HTMLInputElement).value;
 			this.filterLogs();
 		}));
 	}
@@ -175,7 +177,7 @@ export class LogsView extends ViewPane {
 		this.scrollContainer = append(this.container, $('.logs-scroll'));
 		this.listContainer = append(this.scrollContainer, $('.logs-list'));
 
-		this._register(addStandardDisposableListener(this.scrollContainer, 'scroll', () => {
+		this._register(addStandardDisposableListener(this.scrollContainer as HTMLElement, 'scroll', () => {
 			this.handleScroll();
 		}));
 
@@ -186,7 +188,7 @@ export class LogsView extends ViewPane {
 		const filtered = this.getFilteredLogs();
 
 		if (filtered.length === 0) {
-			this.listContainer.innerHTML = '';
+			clearNode(this.listContainer);
 			append(this.listContainer, $('div.empty-state', {}, localize('noLogs', 'No logs to display')));
 			return;
 		}
@@ -199,7 +201,7 @@ export class LogsView extends ViewPane {
 			fragment.appendChild(logElement);
 		}
 
-		this.listContainer.innerHTML = '';
+		clearNode(this.listContainer);
 		this.listContainer.appendChild(fragment);
 
 		if (this.autoScroll && this.isAtBottom) {
@@ -212,7 +214,6 @@ export class LogsView extends ViewPane {
 			'data-log-id': log.id,
 		}));
 
-		const timestamp = append(element, $('span.log-timestamp', {}, this.formatTime(log.timestamp)));
 
 		const level = append(element, $('span.log-level', {}, log.level.toUpperCase()));
 		level.title = log.level;
@@ -230,12 +231,12 @@ export class LogsView extends ViewPane {
 
 		if (log.correlationId) {
 			const correlation = append(element, $('span.log-correlation', {}, log.correlationId.slice(0, 8)));
-			this._register(addStandardDisposableListener(correlation, 'click', () => {
+			this._register(addStandardDisposableListener(correlation as HTMLElement, 'click', () => {
 				this.filterByCorrelation(log.correlationId!);
 			}));
 		}
 
-		this._register(addStandardDisposableListener(element, 'click', () => {
+		this._register(addStandardDisposableListener(element as HTMLElement, 'click', () => {
 			this.copyLog(log);
 		}));
 
@@ -296,16 +297,14 @@ export class LogsView extends ViewPane {
 	}
 
 	private toggleLevelFilter(level: LogLevel): void {
-		if (!this.filter.levels) {
-			this.filter.levels = [];
-		}
-
-		const index = this.filter.levels.indexOf(level);
+		const current = this.filter.levels || [];
+		const index = current.indexOf(level);
 		if (index >= 0) {
-			this.filter.levels.splice(index, 1);
+			current.splice(index, 1);
 		} else {
-			this.filter.levels.push(level);
+			current.push(level);
 		}
+		this.filter = { ...this.filter, levels: current };
 
 		this.updateFilterButtons();
 		this.filterLogs();
@@ -313,15 +312,16 @@ export class LogsView extends ViewPane {
 	}
 
 	private updateFilterButtons(): void {
-		const buttons = this.filterContainer.querySelectorAll('.filter-toggle');
+		const buttons = this.logsFilterContainer.querySelectorAll('.filter-toggle');
 		buttons.forEach(btn => {
-			const level = btn.dataset.level as LogLevel;
-			btn.classList.toggle('active', this.isLevelFiltered(level));
+			const level = (btn as HTMLElement).dataset.level as LogLevel;
+			(btn as HTMLElement).classList.toggle('active', this.isLevelFiltered(level));
 		});
 	}
 
 	private filterByCorrelation(correlationId: string): void {
-		this.filter.correlationId = correlationId;
+		const current = this.filter.categories || [];
+		this.filter = { ...this.filter, categories: [...current, correlationId] };
 		this.renderLogs();
 	}
 
@@ -335,7 +335,7 @@ export class LogsView extends ViewPane {
 	}
 
 	private loadLogs(): void {
-		const stored = this.storageService.get(LogsView.LOGS_STORE_KEY, 0);
+		const stored = this.storageService.get(LogsView.LOGS_STORE_KEY, StorageScope.APPLICATION);
 		if (stored) {
 			try {
 				this.logs = JSON.parse(stored);
@@ -349,11 +349,11 @@ export class LogsView extends ViewPane {
 		if (this.logs.length > LogsView.MAX_LOGS) {
 			this.logs = this.logs.slice(-LogsView.MAX_LOGS);
 		}
-		this.storageService.store(LogsView.LOGS_STORE_KEY, JSON.stringify(this.logs), 0);
+		this.storageService.store(LogsView.LOGS_STORE_KEY, JSON.stringify(this.logs), StorageScope.APPLICATION, StorageTarget.USER);
 	}
 
 	private loadFilterState(): void {
-		const stored = this.storageService.get(LogsView.FILTER_STATE_KEY, 0);
+		const stored = this.storageService.get(LogsView.FILTER_STATE_KEY, StorageScope.APPLICATION);
 		if (stored) {
 			try {
 				this.filter = JSON.parse(stored);
@@ -364,62 +364,25 @@ export class LogsView extends ViewPane {
 	}
 
 	private saveFilterState(): void {
-		this.storageService.store(LogsView.FILTER_STATE_KEY, JSON.stringify(this.filter), 0);
+		this.storageService.store(LogsView.FILTER_STATE_KEY, JSON.stringify(this.filter), StorageScope.APPLICATION, StorageTarget.USER);
 	}
 
 	private setupEventListeners(): void {
-		// Subscribe to runtime logs
-		this._register(this.runtimeEventBus.on(RuntimeEventType.RuntimeLog, (event) => {
+		this._register(this.runtimeEventBus.on<LogEvent>(RuntimeEventType.RuntimeError, (event: RuntimeEvent<LogEvent>) => {
 			this.addLog({
-				level: event.payload?.level || 'info',
-				message: event.payload?.message || '',
-				source: event.payload?.source || 'runtime',
-				category: event.payload?.category,
-				correlationId: event.payload?.correlationId,
-				metadata: event.payload?.metadata,
+				level: event.payload.level,
+				message: event.payload.message,
+				source: event.payload.source || 'runtime',
 			});
 		}));
 
-		this._register(this.runtimeEventBus.on(RuntimeEventType.RuntimeError, (event) => {
+		this._register(this.runtimeEventBus.on<AgentEvent>(RuntimeEventType.AgentFailed, (event: RuntimeEvent<AgentEvent>) => {
 			this.addLog({
 				level: 'error',
-				message: event.payload?.message || 'Unknown error',
-				source: 'runtime',
-				category: 'error',
-				correlationId: event.payload?.correlationId,
+				message: event.payload.message || 'Agent failed',
+				source: 'agent',
+				category: 'agent',
 			});
-		}));
-
-		this._register(this.runtimeEventBus.on(RuntimeEventType.RuntimeWarning, (event) => {
-			this.addLog({
-				level: 'warning',
-				message: event.payload?.message || 'Unknown warning',
-				source: 'runtime',
-				category: 'warning',
-				correlationId: event.payload?.correlationId,
-			});
-		}));
-
-		this._register(this.runtimeEventBus.on(RuntimeEventType.RuntimeInfo, (event) => {
-			this.addLog({
-				level: 'info',
-				message: event.payload?.message || 'Information',
-				source: 'runtime',
-				category: 'info',
-				correlationId: event.payload?.correlationId,
-			});
-		}));
-
-		// Also capture VS Code log service messages
-		this._register(this.logService.onDidLog((e) => {
-			if (e.level === 'error' || e.level === 'warning' || e.level === 'info') {
-				this.addLog({
-					level: e.level,
-					message: e.message,
-					source: 'nutanaa',
-					category: e.type,
-				});
-			}
 		}));
 	}
 
@@ -509,9 +472,6 @@ export class LogsView extends ViewPane {
 
 	public override dispose(): void {
 		this.saveLogs();
-		this._register.dispose();
 		super.dispose();
 	}
 }
-
-import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';

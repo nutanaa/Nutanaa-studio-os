@@ -1,0 +1,5 @@
+startedAt=2026-08-11T01:33:25.343Z
+repoRoot=c:\Users\purushotham\git\Nutanaa-studio-os
+python=c:\Users\purushotham\git\Nutanaa-studio-os\editor\venv\Scripts\python.exe
+args=-m uvicorn backend.api.main:app --host 127.0.0.1 --port 8787 --reload
+pid=3004

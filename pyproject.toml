@@ -7,7 +7,7 @@ name = "nutanaa-studio-os"
 version = "0.1.0"
 description = "Python project foundation for Nutanaa Studio OS"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["psutil>=5.9.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = []

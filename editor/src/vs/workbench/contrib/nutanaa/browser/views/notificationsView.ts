@@ -3,23 +3,23 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
-import { Emitter, Event } from '../../../../base/common/event.js';
-import { append, $, addStandardDisposableListener } from '../../../../base/browser/dom.js';
-import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
-import { ILogService } from '../../../../platform/log/common/log.js';
-import { IThemeService } from '../../../../platform/theme/common/themeService.js';
-import { IStorageService } from '../../../../platform/storage/common/storage.js';
-import { IHoverService } from '../../../../platform/hover/browser/hover.js';
-import { KeybindingService } from '../../../../platform/keybinding/browser/keybindingService.js';
-import { ViewPane, ViewPaneOptions } from '../../../browser/parts/views/viewPane.js';
-import { IRuntimeEventBus, RuntimeEventType } from '../../common/runtimeEventBus.js';
-import { IRuntimeStateService } from '../../common/runtimeState.js';
+import { append, $, clearNode, addStandardDisposableListener } from '../../../../../base/browser/dom.js';
+import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
+import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
+import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
+import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
+import { IViewDescriptorService } from '../../../../common/views.js';
+import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
+import { FilterViewPane, IFilterViewPaneOptions } from '../../../../browser/parts/views/viewPane.js';
+import { IRuntimeEventBus } from '../../common/runtime/runtimeEventBus.js';
+import { RuntimeEventType, RuntimeEvent, AgentEvent, ProviderEvent, WorkflowEvent, LogEvent } from '../../common/runtime/runtimeEvents.js';
 import { INotification, INotificationAction, INotificationSettings, NotificationType } from '../../models/studioModel.js';
-import { localize } from '../../../../nls.js';
-import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { localize } from '../../../../../nls.js';
+import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 
 /**
  * Notifications Center View for Nutanaa Studio OS.
@@ -31,14 +31,14 @@ import { ICommandService } from '../../../../platform/commands/common/commands.j
  * - Dismiss functionality
  * - Notification history
  */
-export class NotificationsView extends ViewPane {
+export class NotificationsView extends FilterViewPane {
 
 	private static readonly NOTIFICATIONS_STORE_KEY = 'nutanaa.notifications';
 	private static readonly SETTINGS_STORE_KEY = 'nutanaa.notifications.settings';
 	private static readonly MAX_NOTIFICATIONS = 100;
 
 	private container!: HTMLElement;
-	private filterContainer!: HTMLElement;
+	private notificationsFilterContainer!: HTMLElement;
 	private listContainer!: HTMLElement;
 	private settingsContainer!: HTMLElement;
 
@@ -52,25 +52,22 @@ export class NotificationsView extends ViewPane {
 		autoDismissDelay: 5000,
 	};
 
-	private readonly _register: DisposableStore;
-
 	constructor(
-		options: ViewPaneOptions,
-		@IInstantiationService instantiationService: IInstantiationService,
-		@IContextViewService contextViewService: IContextViewService,
-		@ILogService logService: ILogService,
-		@IThemeService themeService: IThemeService,
-		@IStorageService storageService: IStorageService,
-		@IHoverService hoverService: IHoverService,
-		@IKeybindingService keybindingService: KeybindingService,
-		@IRuntimeEventBus private readonly runtimeEventBus: IRuntimeEventBus,
-		@IRuntimeStateService private readonly runtimeStateService: IRuntimeStateService,
+		options: IFilterViewPaneOptions,
+		@IKeybindingService keybindingService: IKeybindingService,
+		@IContextMenuService contextMenuService: IContextMenuService,
 		@IConfigurationService configurationService: IConfigurationService,
-		@ICommandService private readonly commandService: ICommandService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
+		@IInstantiationService instantiationService: IInstantiationService,
+		@IOpenerService openerService: IOpenerService,
+		@IThemeService themeService: IThemeService,
+		@IHoverService hoverService: IHoverService,
+		@IStorageService private readonly storageService: IStorageService,
+		@ILogService logService: ILogService,
+		@IRuntimeEventBus private readonly runtimeEventBus: IRuntimeEventBus,
 	) {
-		super(options, instantiationService, contextViewService, configurationService, keybindingService, themeService, storageService, logService, hoverService);
-
-		this._register = new DisposableStore();
+		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
 		this.loadNotifications();
 		this.loadSettings();
@@ -79,6 +76,9 @@ export class NotificationsView extends ViewPane {
 
 	protected override renderBody(container: HTMLElement): void {
 		this.container = container;
+	}
+
+	protected layoutBodyContent(height: number, width: number): void {
 		this.container.classList.add('nutanaa-notifications');
 
 		this.renderFilterBar();
@@ -87,7 +87,7 @@ export class NotificationsView extends ViewPane {
 	}
 
 	private renderFilterBar(): void {
-		this.filterContainer = append(this.container, $('.notification-filter'));
+		this.notificationsFilterContainer = append(this.container, $('.notification-filter'));
 
 		const types: Array<{ type: NotificationType; icon: string }> = [
 			{ type: 'error', icon: '❌' },
@@ -97,27 +97,25 @@ export class NotificationsView extends ViewPane {
 		];
 
 		for (const type of types) {
-			const button = append(this.filterContainer, $(`.filter-toggle${this.isTypeVisible(type.type) ? ' active' : ''}`));
+			const button = append(this.notificationsFilterContainer, $(`.filter-toggle${this.isTypeVisible(type.type) ? ' active' : ''}`));
 			button.title = type.type;
-			button.innerHTML = type.icon;
-			button.dataset.type = type.type;
+			button.textContent = type.icon;
+			(button as HTMLElement).dataset.type = type.type;
 
-			this._register(addStandardDisposableListener(button, 'click', () => {
+			this._register(addStandardDisposableListener(button as HTMLElement, 'click', () => {
 				this.toggleTypeVisibility(type.type);
 			}));
 		}
 
-		const spacer = append(this.filterContainer, $('div.filter-spacer'));
-
-		const clearButton = append(this.filterContainer, $('button.clear-button', {}, '🗑'));
+		const clearButton = append(this.notificationsFilterContainer, $('button.clear-button', {}, '🗑'));
 		clearButton.title = localize('clearAll', 'Clear All');
-		this._register(addStandardDisposableListener(clearButton, 'click', () => {
+		this._register(addStandardDisposableListener(clearButton as HTMLElement, 'click', () => {
 			this.clearAllNotifications();
 		}));
 
-		const settingsButton = append(this.filterContainer, $('button.settings-button', {}, '⚙️'));
+		const settingsButton = append(this.notificationsFilterContainer, $('button.settings-button', {}, '⚙️'));
 		settingsButton.title = localize('settings', 'Settings');
-		this._register(addStandardDisposableListener(settingsButton, 'click', () => {
+		this._register(addStandardDisposableListener(settingsButton as HTMLElement, 'click', () => {
 			this.toggleSettings();
 		}));
 	}
@@ -132,7 +130,7 @@ export class NotificationsView extends ViewPane {
 		const visible = this.getVisibleNotifications();
 
 		if (visible.length === 0) {
-			this.listContainer.innerHTML = '';
+			clearNode(this.listContainer);
 			append(this.listContainer, $('div.empty-state', {}, localize('noNotifications', 'No notifications')));
 			return;
 		}
@@ -144,7 +142,7 @@ export class NotificationsView extends ViewPane {
 			fragment.appendChild(notificationElement);
 		}
 
-		this.listContainer.innerHTML = '';
+		clearNode(this.listContainer);
 		this.listContainer.appendChild(fragment);
 	}
 
@@ -165,8 +163,6 @@ export class NotificationsView extends ViewPane {
 		const title = append(header, $('span.notification-title', {}, notification.title));
 		title.title = notification.title;
 
-		const time = append(header, $('span.notification-time', {}, this.formatTime(notification.timestamp)));
-
 		const message = append(content, $('span.notification-message', {}, notification.message));
 		message.title = notification.message;
 
@@ -181,7 +177,7 @@ export class NotificationsView extends ViewPane {
 			const actions = append(content, $('.notification-actions'));
 			for (const action of notification.actions) {
 				const actionButton = append(actions, $(`button.action-button${action.primary ? ' primary' : ''}`, {}, action.label));
-				this._register(addStandardDisposableListener(actionButton, 'click', () => {
+				this._register(addStandardDisposableListener(actionButton as HTMLElement, 'click', () => {
 					this.executeAction(notification, action);
 				}));
 			}
@@ -191,7 +187,7 @@ export class NotificationsView extends ViewPane {
 		if (notification.dismissible) {
 			const dismissButton = append(element, $('button.dismiss-button', {}, '×'));
 			dismissButton.title = localize('dismiss', 'Dismiss');
-			this._register(addStandardDisposableListener(dismissButton, 'click', () => {
+			this._register(addStandardDisposableListener(dismissButton as HTMLElement, 'click', () => {
 				this.dismissNotification(notification.id);
 			}));
 		}
@@ -226,8 +222,9 @@ export class NotificationsView extends ViewPane {
 		const container = append(this.settingsContainer, $('label.settings-toggle'));
 
 		const toggle = append(container, $('input.toggle-input', { type: 'checkbox', checked: this.settings[key] as boolean }));
-		this._register(addStandardDisposableListener(toggle, 'change', () => {
-			(this.settings as Record<string, boolean>)[key] = toggle.checked;
+		this._register(addStandardDisposableListener(toggle as HTMLElement, 'change', () => {
+			const updatedSettings = { ...this.settings, [key]: (toggle as HTMLInputElement).checked };
+			this.settings = updatedSettings as INotificationSettings;
 			this.saveSettings();
 			this.renderNotifications();
 		}));
@@ -244,7 +241,7 @@ export class NotificationsView extends ViewPane {
 				(n.type === 'success' && this.settings.showSuccess) ||
 				(n.type === 'info' && this.settings.showInfo);
 
-			return isVisible && !n.dismissedOnce;
+			return isVisible && !n.dismissibleOnce;
 		}).slice(0, this.settings.maxVisible);
 	}
 
@@ -260,10 +257,10 @@ export class NotificationsView extends ViewPane {
 
 	private toggleTypeVisibility(type: NotificationType): void {
 		switch (type) {
-			case 'error': this.settings.showErrors = !this.settings.showErrors; break;
-			case 'warning': this.settings.showWarnings = !this.settings.showWarnings; break;
-			case 'success': this.settings.showSuccess = !this.settings.showSuccess; break;
-			case 'info': this.settings.showInfo = !this.settings.showInfo; break;
+			case 'error': { const current = this.settings.showErrors; this.settings = { ...this.settings, showErrors: !current }; break; }
+			case 'warning': { const current = this.settings.showWarnings; this.settings = { ...this.settings, showWarnings: !current }; break; }
+			case 'success': { const current = this.settings.showSuccess; this.settings = { ...this.settings, showSuccess: !current }; break; }
+			case 'info': { const current = this.settings.showInfo; this.settings = { ...this.settings, showInfo: !current }; break; }
 		}
 
 		this.updateFilterButtons();
@@ -272,10 +269,10 @@ export class NotificationsView extends ViewPane {
 	}
 
 	private updateFilterButtons(): void {
-		const buttons = this.filterContainer.querySelectorAll('.filter-toggle');
+		const buttons = this.notificationsFilterContainer.querySelectorAll('.filter-toggle');
 		buttons.forEach(btn => {
-			const type = btn.dataset.type as NotificationType;
-			btn.classList.toggle('active', this.isTypeVisible(type));
+			const type = (btn as HTMLElement).dataset.type as NotificationType;
+			(btn as HTMLElement).classList.toggle('active', this.isTypeVisible(type));
 		});
 	}
 
@@ -289,13 +286,9 @@ export class NotificationsView extends ViewPane {
 		}
 	}
 
-	private formatTime(timestamp: number): string {
-		const date = new Date(timestamp);
-		return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-	}
 
 	private loadNotifications(): void {
-		const stored = this.storageService.get(NotificationsView.NOTIFICATIONS_STORE_KEY, 0);
+		const stored = this.storageService.get(NotificationsView.NOTIFICATIONS_STORE_KEY, StorageScope.APPLICATION);
 		if (stored) {
 			try {
 				this.notifications = JSON.parse(stored);
@@ -309,11 +302,11 @@ export class NotificationsView extends ViewPane {
 		if (this.notifications.length > NotificationsView.MAX_NOTIFICATIONS) {
 			this.notifications = this.notifications.slice(-NotificationsView.MAX_NOTIFICATIONS);
 		}
-		this.storageService.store(NotificationsView.NOTIFICATIONS_STORE_KEY, JSON.stringify(this.notifications), 0);
+		this.storageService.store(NotificationsView.NOTIFICATIONS_STORE_KEY, JSON.stringify(this.notifications), StorageScope.APPLICATION, StorageTarget.USER);
 	}
 
 	private loadSettings(): void {
-		const stored = this.storageService.get(NotificationsView.SETTINGS_STORE_KEY, 0);
+		const stored = this.storageService.get(NotificationsView.SETTINGS_STORE_KEY, StorageScope.APPLICATION);
 		if (stored) {
 			try {
 				this.settings = { ...this.settings, ...JSON.parse(stored) };
@@ -324,78 +317,77 @@ export class NotificationsView extends ViewPane {
 	}
 
 	private saveSettings(): void {
-		this.storageService.store(NotificationsView.SETTINGS_STORE_KEY, JSON.stringify(this.settings), 0);
+		this.storageService.store(NotificationsView.SETTINGS_STORE_KEY, JSON.stringify(this.settings), StorageScope.APPLICATION, StorageTarget.USER);
 	}
 
 	private setupEventListeners(): void {
-		// Subscribe to runtime events
-		this._register(this.runtimeEventBus.on(RuntimeEventType.RuntimeError, (event) => {
+		this._register(this.runtimeEventBus.on<LogEvent>(RuntimeEventType.Error, (event: RuntimeEvent<LogEvent>) => {
 			this.addNotification({
 				type: 'error',
 				title: 'Error',
-				message: event.payload?.message || 'An error occurred',
-				source: event.payload?.source || 'runtime',
+				message: event.payload.message,
+				source: event.payload.source || 'runtime',
 				dismissible: true,
 				dismissibleOnce: false,
 			});
 		}));
 
-		this._register(this.runtimeEventBus.on(RuntimeEventType.RuntimeWarning, (event) => {
+		this._register(this.runtimeEventBus.on<LogEvent>(RuntimeEventType.Warning, (event: RuntimeEvent<LogEvent>) => {
 			this.addNotification({
 				type: 'warning',
 				title: 'Warning',
-				message: event.payload?.message || 'A warning occurred',
-				source: event.payload?.source || 'runtime',
+				message: event.payload.message,
+				source: event.payload.source || 'runtime',
 				dismissible: true,
 				dismissibleOnce: false,
 			});
 		}));
 
-		this._register(this.runtimeEventBus.on(RuntimeEventType.RuntimeInfo, (event) => {
+		this._register(this.runtimeEventBus.on<LogEvent>(RuntimeEventType.Log, (event: RuntimeEvent<LogEvent>) => {
 			this.addNotification({
 				type: 'info',
 				title: 'Info',
-				message: event.payload?.message || 'Information',
-				source: event.payload?.source || 'runtime',
+				message: event.payload.message,
+				source: event.payload.source || 'runtime',
 				dismissible: true,
 				dismissibleOnce: false,
 			});
 		}));
 
-		this._register(this.runtimeEventBus.on(RuntimeEventType.AgentCompleted, (event) => {
+		this._register(this.runtimeEventBus.on<AgentEvent>(RuntimeEventType.AgentCompleted, (event: RuntimeEvent<AgentEvent>) => {
 			this.addNotification({
 				type: 'success',
 				title: 'Agent Completed',
-				message: `Agent ${event.payload?.agentId} completed successfully`,
+				message: `Agent ${event.payload.id} completed successfully`,
 				source: 'agent',
 				dismissible: true,
 				dismissibleOnce: false,
 			});
 		}));
 
-		this._register(this.runtimeEventBus.on(RuntimeEventType.AgentFailed, (event) => {
+		this._register(this.runtimeEventBus.on<AgentEvent>(RuntimeEventType.AgentFailed, (event: RuntimeEvent<AgentEvent>) => {
 			this.addNotification({
 				type: 'error',
 				title: 'Agent Failed',
-				message: event.payload?.error || 'Agent failed',
+				message: event.payload.message || 'Agent failed',
 				source: 'agent',
 				dismissible: true,
 				dismissibleOnce: false,
 			});
 		}));
 
-		this._register(this.runtimeEventBus.on(RuntimeEventType.ProviderChanged, (event) => {
+		this._register(this.runtimeEventBus.on<ProviderEvent>(RuntimeEventType.ProviderChanged, (event: RuntimeEvent<ProviderEvent>) => {
 			this.addNotification({
 				type: 'info',
 				title: 'Provider Changed',
-				message: `Provider changed to ${event.payload?.name}`,
+				message: `Provider changed to ${event.payload.name}`,
 				source: 'provider',
 				dismissible: true,
 				dismissibleOnce: true,
 			});
 		}));
 
-		this._register(this.runtimeEventBus.on(RuntimeEventType.WorkflowCompleted, (event) => {
+		this._register(this.runtimeEventBus.on<WorkflowEvent>(RuntimeEventType.WorkflowCompleted, (event: RuntimeEvent<WorkflowEvent>) => {
 			this.addNotification({
 				type: 'success',
 				title: 'Workflow Completed',
@@ -406,11 +398,11 @@ export class NotificationsView extends ViewPane {
 			});
 		}));
 
-		this._register(this.runtimeEventBus.on(RuntimeEventType.ToolCompleted, (event) => {
+		this._register(this.runtimeEventBus.on<unknown>(RuntimeEventType.ToolCompleted, (event: RuntimeEvent<unknown>) => {
 			this.addNotification({
 				type: 'success',
 				title: 'Tool Completed',
-				message: `Tool ${event.payload?.toolName} completed`,
+				message: `Tool ${(event.payload as { title?: string })?.title || 'unknown'} completed`,
 				source: 'tool',
 				dismissible: true,
 				dismissibleOnce: true,
@@ -442,12 +434,15 @@ export class NotificationsView extends ViewPane {
 	}
 
 	private dismissNotification(notificationId: string): void {
-		const notification = this.notifications.find(n => n.id === notificationId);
-		if (notification) {
+		const notificationIndex = this.notifications.findIndex(n => n.id === notificationId);
+		if (notificationIndex >= 0) {
+			const notification = this.notifications[notificationIndex];
 			if (notification.dismissibleOnce) {
-				notification.dismissedOnce = true;
+				const updatedNotification = { ...notification, dismissibleOnce: !notification.dismissibleOnce };
+				this.notifications[notificationIndex] = updatedNotification;
 			} else {
-				notification.dismissible = false;
+				const updatedNotification = { ...notification, dismissible: false };
+				this.notifications[notificationIndex] = updatedNotification;
 			}
 			this.saveNotifications();
 			this.renderNotifications();
@@ -474,9 +469,6 @@ export class NotificationsView extends ViewPane {
 
 	public override dispose(): void {
 		this.saveNotifications();
-		this._register.dispose();
 		super.dispose();
 	}
 }
-
-import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';

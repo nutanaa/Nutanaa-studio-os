@@ -6,9 +6,9 @@
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from 'fs';
 import { request } from 'http';
-import { dirname, join, normalize } from '../../../base/common/path.js';
-import { Event } from '../../../base/common/event.js';
-import { Disposable } from '../../../base/common/lifecycle.js';
+import { join, normalize } from '../../base/common/path.js';
+import { Event } from '../../base/common/event.js';
+import { Disposable } from '../../base/common/lifecycle.js';
 import { IEnvironmentMainService } from '../../platform/environment/electron-main/environmentMainService.js';
 import { ILogService } from '../../platform/log/common/log.js';
 import { ILifecycleMainService } from '../../platform/lifecycle/electron-main/lifecycleMainService.js';
@@ -40,7 +40,7 @@ export class BackendProcessManager extends Disposable {
 			return;
 		}
 
-		if (this.environmentMainService.args['skip-backend']) {
+		if ((this.environmentMainService.args as any)['skip-backend']) {
 			this.logService.debug('Skipping backend startup because --skip-backend was passed.');
 			return;
 		}
@@ -96,7 +96,7 @@ export class BackendProcessManager extends Disposable {
 			env,
 			stdio: ['ignore', this.backendStdoutFd, this.backendStderrFd],
 			windowsHide: true
-		});
+		}) as ChildProcessWithoutNullStreams;
 
 		this.backendProcess.on('error', error => {
 			this.logService.error(`Backend process failed to start: ${error.message}`);
@@ -191,7 +191,7 @@ export class BackendProcessManager extends Disposable {
 		return new Promise(resolve => setTimeout(resolve, ms));
 	}
 
-	public dispose(): void {
+	public override dispose(): void {
 		if (this.backendProcess && !this.backendProcess.killed) {
 			try {
 				this.backendProcess.kill();

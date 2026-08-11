@@ -9,6 +9,7 @@ import { Registry } from '../../../../platform/registry/common/platform.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
 import { ViewPaneContainer } from '../../../browser/parts/views/viewPaneContainer.js';
 import {
 	Extensions as ViewContainerExtensions,
@@ -27,68 +28,109 @@ import {
 	INutanaaRuntimeConnectionService,
 	NUTANAA_VIEW_CONTAINER_ID,
 } from '../common/nutanaa.js';
-import { NutanaaRuntimeConnectionService } from './nutanaaRuntimeConnectionService.js';
+import { NutanaaRuntimeConnectionService } from './runtime/nutanaaRuntimeConnectionService.js';
 
-import { IRuntimeEventBus, RuntimeEventBus } from '../common/runtimeEventBus.js';
-import { IRuntimeStateService } from '../common/runtimeState.js';
+import { IRuntimeEventBus, RuntimeEventBus } from '../common/runtime/runtimeEventBus.js';
+import { IRuntimeStateService } from '../common/runtime/runtimeState.js';
 import { RuntimeStateService } from './runtimeStateService.js';
 
 // ── Phase 2 services ──────────────────────────────────────────────────────────
 
-import { IAgentCoordinator, AgentCoordinator } from '../common/agentCoordinator.js';
-import { ITaskScheduler } from '../common/taskScheduler.js';
-import { TaskScheduler } from './taskScheduler.js';
-import { IWorkflowEngine } from '../common/workflowEngine.js';
-import { WorkflowEngine } from './workflowEngine.js';
-import { IAgentDispatcher, AgentDispatcher } from '../services/agentDispatcher.js';
+import { IAgentCoordinator, AgentCoordinator } from '../common/agents/agentCoordinator.js';
+import { IAgentDispatcher, AgentDispatcher } from './agents/agentDispatcher.js';
+import { ITaskScheduler } from '../common/workflow/taskScheduler.js';
+import { TaskScheduler } from './workflow/taskScheduler.js';
+import { IWorkflowEngine } from '../common/workflow/workflowEngine.js';
+import { WorkflowEngine } from './workflow/workflowEngine.js';
 
 // ── Runtime coordinator ───────────────────────────────────────────────────────
 
-import { IRuntimeCoordinator } from '../common/runtimeCoordinator.js';
-import { RuntimeCoordinator } from './runtimeCoordinator.js';
+import { IRuntimeCoordinator } from '../common/runtime/runtimeCoordinator.js';
+import { RuntimeCoordinator } from './runtime/runtimeCoordinator.js';
 
 // ── Phase 3 services ─────────────────────────────────────────────────────────
 
-import { IProviderManager, ProviderManager } from '../common/providerManager.js';
-import { IModelRegistry, ModelRegistry } from '../common/modelRegistry.js';
-import { IPromptManager, PromptManager } from '../common/promptManager.js';
-import { IContextBuilder, ContextBuilder } from '../common/contextBuilder.js';
-import { IMemoryManager, MemoryManager } from '../common/memoryManager.js';
-import { IEmbeddingManager, EmbeddingManager } from '../common/embeddingManager.js';
-import { IToolManager, ToolManager } from '../common/toolManager.js';
+import { IProviderManager } from '../common/providers/providerManager.js';
+import { IModelRegistry } from '../common/providers/modelRegistry.js';
+import { IPromptManager } from '../common/tools/promptManager.js';
+import { IContextBuilder } from '../common/memory/contextBuilder.js';
+import { IMemoryManager } from '../common/memory/memoryManager.js';
+import { IEmbeddingManager } from '../common/memory/embeddingManager.js';
+import { IToolManager } from '../common/tools/toolManager.js';
+
+import { ProviderManager } from './providers/providerManager.js';
+import { ModelRegistry } from './providers/modelRegistry.js';
+import { PromptManager } from './tools/promptManager.js';
+import { ContextBuilder } from './memory/contextBuilder.js';
+import { MemoryManager } from './memory/memoryManager.js';
+import { EmbeddingManager } from './memory/embeddingManager.js';
+import { ToolManager } from './tools/toolManager.js';
 
 // ── Phase 5 services ─────────────────────────────────────────────────────────
 
-import { IAuthenticationManager, AuthenticationManager } from '../common/authenticationManager.js';
-import { IAuthorizationManager, AuthorizationManager } from '../common/authorizationManager.js';
-import { ISecretsManager, SecretsManager } from '../common/secretsManager.js';
-import { IPluginManager, PluginManager } from '../common/pluginManager.js';
-import { IMarketplaceService, MarketplaceService } from '../common/marketplaceService.js';
-import { IRemoteAgentManager, RemoteAgentManager } from '../common/remoteAgentManager.js';
-import { IDistributedRuntimeManager, DistributedRuntimeManager } from '../common/distributedRuntimeManager.js';
-import { IOrganizationManager, OrganizationManager } from '../common/organizationManager.js';
-import { IAuditManager, AuditManager } from '../common/auditManager.js';
+import { IAuthenticationManager } from '../common/auth/authenticationManager.js';
+import { IAuthorizationManager } from '../common/auth/authorizationManager.js';
+import { ISecretsManager } from '../common/auth/secretsManager.js';
+import { IPluginManager } from '../common/tools/pluginManager.js';
+import { IMarketplaceService } from '../common/providers/marketplaceService.js';
+import { IRemoteAgentManager } from '../common/agents/remoteAgentManager.js';
+import { IDistributedRuntimeManager } from '../common/runtime/distributedRuntimeManager.js';
+import { IOrganizationManager } from '../common/ops/organizationManager.js';
+import { IAuditManager } from '../common/auth/auditManager.js';
+
+import { AuthenticationManager } from './auth/authenticationManager.js';
+import { AuthorizationManager } from './auth/authorizationManager.js';
+import { SecretsManager } from './auth/secretsManager.js';
+import { PluginManager } from './tools/pluginManager.js';
+import { MarketplaceService } from './providers/marketplaceService.js';
+import { RemoteAgentManager } from './agents/remoteAgentManager.js';
+import { DistributedRuntimeManager } from './runtime/distributedRuntimeManager.js';
+import { OrganizationManager } from './ops/organizationManager.js';
+import { AuditManager } from './auth/auditManager.js';
 
 // ── Phase 6 services ───────────────────────────────────────────────────────
 
-import { ITelemetryManager, TelemetryManager } from '../common/telemetryManager.js';
-import { IMetricsManager, MetricsManager } from '../common/metricsManager.js';
-import { ITracingManager, TracingManager } from '../common/tracingManager.js';
-import { ILoggingManager, LoggingManager } from '../common/loggingManager.js';
-import { IPerformanceManager, PerformanceManager } from '../common/performanceManager.js';
-import { ICacheManager, CacheManager } from '../common/cacheManager.js';
-import { IOfflineManager, OfflineManager } from '../common/offlineManager.js';
-import { IBackupManager, BackupManager } from '../common/backupManager.js';
-import { IRecoveryManager, RecoveryManager } from '../common/recoveryManager.js';
-import { IUpdateManager, UpdateManager } from '../common/updateManager.js';
-import { IPackagingManager, PackagingManager } from '../common/packagingManager.js';
-import { IConfigurationManager, ConfigurationManager } from '../common/configurationManager.js';
-import { IHealthManager, HealthManager } from '../common/healthManager.js';
+import { ITelemetryManager } from '../common/ops/telemetryManager.js';
+import { IMetricsManager } from '../common/ops/metricsManager.js';
+import { ITracingManager } from '../common/ops/tracingManager.js';
+import { ILoggingManager } from '../common/ops/loggingManager.js';
+import { IPerformanceManager } from '../common/ops/performanceManager.js';
+import { ICacheManager } from '../common/ops/cacheManager.js';
+import { IOfflineManager } from '../common/ops/offlineManager.js';
+import { IBackupManager } from '../common/ops/backupManager.js';
+import { IRecoveryManager } from '../common/ops/recoveryManager.js';
+import { IUpdateManager } from '../common/ops/updateManager.js';
+import { IPackagingManager } from '../common/ops/packagingManager.js';
+import { IConfigurationManager } from '../common/ops/configurationManager.js';
+import { IHealthManager } from '../common/ops/healthManager.js';
+
+import { TelemetryManager } from './ops/telemetryManager.js';
+import { MetricsManager } from './ops/metricsManager.js';
+import { TracingManager } from './ops/tracingManager.js';
+import { LoggingManager } from './ops/loggingManager.js';
+import { PerformanceManager } from './ops/performanceManager.js';
+import { CacheManager } from './ops/cacheManager.js';
+import { OfflineManager } from './ops/offlineManager.js';
+import { BackupManager } from './ops/backupManager.js';
+import { RecoveryManager } from './ops/recoveryManager.js';
+import { UpdateManager } from './ops/updateManager.js';
+import { PackagingManager } from './ops/packagingManager.js';
+import { ConfigurationManager } from './ops/configurationManager.js';
+import { HealthManager } from './ops/healthManager.js';
 
 // ── Views ─────────────────────────────────────────────────────────────────────
 
 import { NutanaaViews } from './nutanaaViews.js';
 import { nutanaaViewIcon } from './nutanaaIcons.js';
+
+/*---------------------------------------------------------------------------------------------
+ * Helper function for DI casting
+ *--------------------------------------------------------------------------------------------*/
+
+// Cast a class to match the expected DI constructor signature
+function diCast<T>(ctor: new (...args: any[]) => any): new (...args: any[]) => T {
+	return ctor as new (...args: any[]) => T;
+}
 
 /*---------------------------------------------------------------------------------------------
  * Service Registration
@@ -133,14 +175,12 @@ registerSingleton(
 	InstantiationType.Delayed
 );
 
-// TaskScheduler injects: IAgentCoordinator, IRuntimeEventBus, IRuntimeStateService, ILogService.
 registerSingleton(
 	ITaskScheduler,
 	TaskScheduler,
 	InstantiationType.Delayed
 );
 
-// WorkflowEngine injects: IAgentCoordinator, IRuntimeEventBus, IRuntimeStateService, ILogService.
 registerSingleton(
 	IWorkflowEngine,
 	WorkflowEngine,
@@ -187,7 +227,11 @@ registerSingleton(
 // MemoryManager injects: IRuntimeEventBus, IRuntimeStateService, ILogService.
 registerSingleton(
 	IMemoryManager,
-	MemoryManager,
+	MemoryManager as unknown as new (
+		runtimeEventBus: IRuntimeEventBus,
+		runtimeStateService: IRuntimeStateService,
+		logService: ILogService
+	) => IMemoryManager,
 	InstantiationType.Delayed
 );
 
@@ -210,7 +254,7 @@ registerSingleton(
 // AuthenticationManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
 registerSingleton(
 	IAuthenticationManager,
-	AuthenticationManager,
+	diCast(AuthenticationManager),
 	InstantiationType.Delayed
 );
 
@@ -238,7 +282,7 @@ registerSingleton(
 // MarketplaceService injects: IPluginManager, IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
 registerSingleton(
 	IMarketplaceService,
-	MarketplaceService,
+	diCast(MarketplaceService),
 	InstantiationType.Delayed
 );
 
@@ -324,7 +368,7 @@ registerSingleton(
 // BackupManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
 registerSingleton(
 	IBackupManager,
-	BackupManager,
+	diCast<IBackupManager>(BackupManager),
 	InstantiationType.Delayed
 );
 
@@ -349,17 +393,17 @@ registerSingleton(
 	InstantiationType.Delayed
 );
 
-// ConfigurationManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
+// ConfigurationManager injects: IInstantiationService, ILogService, IStorageService, IRuntimeEventBus, IRuntimeStateService.
 registerSingleton(
 	IConfigurationManager,
-	ConfigurationManager,
+	diCast<IConfigurationManager>(ConfigurationManager),
 	InstantiationType.Delayed
 );
 
 // HealthManager injects: IRuntimeEventBus, IRuntimeStateService, IStorageService, ILogService.
 registerSingleton(
 	IHealthManager,
-	HealthManager,
+	diCast(HealthManager),
 	InstantiationType.Delayed
 );
 
@@ -567,6 +611,7 @@ class NutanaaContribution extends Disposable implements IWorkbenchContribution {
 		);
 
 		// Start the coordinator (fires onRuntimeReady, wires dispatcher).
+		_agentCoordinator.setDispatcher((req) => _agentDispatcher.dispatch(req));
 		void runtimeCoordinator.start();
 
 		// Establish HTTP + WebSocket connection to the Nutanaa Runtime backend.
@@ -576,6 +621,6 @@ class NutanaaContribution extends Disposable implements IWorkbenchContribution {
 
 registerWorkbenchContribution2(
 	'workbench.contrib.nutanaaViews',
-	NutanaaContribution,
+	diCast(NutanaaContribution),
 	WorkbenchPhase.AfterRestored
 );

@@ -10,9 +10,8 @@ import {
 	ITreeViewDataProvider,
 	TreeItemCollapsibleState
 } from '../../../common/views.js';
-import { IRuntimeStateService } from '../common/runtimeState.js';
-import { IRuntimeEventBus, RuntimeEventType } from '../common/runtimeEventBus.js';
-import { IWorkspaceService } from '../../../../workspace/common/workspace.js';
+import { IRuntimeStateService } from '../common/runtime/runtimeState.js';
+import { IRuntimeEventBus, RuntimeEventType } from '../common/runtime/runtimeEventBus.js';
 
 /**
  * Project Explorer Data Provider for Nutanaa Studio OS.
@@ -31,7 +30,6 @@ export class ProjectExplorerDataProvider extends Disposable implements ITreeView
 	constructor(
 		@IRuntimeStateService private readonly stateService: IRuntimeStateService,
 		@IRuntimeEventBus private readonly runtimeEventBus: IRuntimeEventBus,
-		@IWorkspaceService private readonly workspaceService: IWorkspaceService,
 	) {
 		super();
 
@@ -61,9 +59,6 @@ export class ProjectExplorerDataProvider extends Disposable implements ITreeView
 	}
 
 	private buildRootItems(): ITreeItem[] {
-		const workspace = this.workspaceService.getWorkspace();
-		const hasWorkspace = workspace.configurations && workspace.configurations.length > 0;
-
 		return [
 			{
 				handle: ProjectExplorerDataProvider.RECENT_ID,
@@ -79,9 +74,9 @@ export class ProjectExplorerDataProvider extends Disposable implements ITreeView
 			},
 			{
 				handle: ProjectExplorerDataProvider.WORKSPACE_ID,
-				label: { label: hasWorkspace ? 'Workspace' : 'No Workspace Open' },
-				collapsibleState: hasWorkspace ? TreeItemCollapsibleState.Collapsed : TreeItemCollapsibleState.None,
-				contextValue: hasWorkspace ? 'nutanaaProject.workspace' : 'nutanaaProject.workspaceEmpty',
+				label: { label: 'Workspace' },
+				collapsibleState: TreeItemCollapsibleState.Collapsed,
+				contextValue: 'nutanaaProject.workspace',
 			}
 		];
 	}
@@ -147,12 +142,6 @@ export class ProjectExplorerDataProvider extends Disposable implements ITreeView
 	}
 
 	private buildWorkspaceItems(state: ReturnType<IRuntimeStateService['getState']>): ITreeItem[] {
-		const workspace = this.workspaceService.getWorkspace();
-
-		if (!workspace.configurations || workspace.configurations.length === 0) {
-			return [];
-		}
-
 		const workflows = Object.values(state.workflows);
 		const items: ITreeItem[] = [
 			{

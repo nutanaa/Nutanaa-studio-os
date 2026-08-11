@@ -3,34 +3,36 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
-import { Emitter, Event } from '../../../../base/common/event.js';
-import { append, $, addStandardDisposableListener } from '../../../../base/browser/dom.js';
-import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
-import { ILogService } from '../../../../platform/log/common/log.js';
-import { IThemeService } from '../../../../platform/theme/common/themeService.js';
-import { IStorageService } from '../../../../platform/storage/common/storage.js';
-import { IHoverService } from '../../../../platform/hover/browser/hover.js';
-import { KeybindingService } from '../../../../platform/keybinding/browser/keybindingService.js';
-import { ViewPane, ViewPaneOptions } from '../../../browser/parts/views/viewPane.js';
-import { IRuntimeEventBus, RuntimeEventType } from '../../common/runtimeEventBus.js';
-import { IRuntimeStateService } from '../../common/runtimeState.js';
+import { Emitter } from '../../../../../base/common/event.js';
+import { append, $, clearNode, addStandardDisposableListener } from '../../../../../base/browser/dom.js';
+import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
+import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
+import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
+import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
+import { IViewDescriptorService } from '../../../../common/views.js';
+import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
+import { FilterViewPane, IFilterViewPaneOptions } from '../../../../browser/parts/views/viewPane.js';
+import { IRuntimeEventBus } from '../../common/runtime/runtimeEventBus.js';
+import { RuntimeEventType } from '../../common/runtime/runtimeEvents.js';
 import { ITimelineEvent, ITimelineFilter, TimelineEventType } from '../../models/studioModel.js';
-import { localize } from '../../../../nls.js';
-import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { AgentEvent, TaskEvent, WorkflowEvent, ProviderEvent, LogEvent, RuntimeEvent } from '../../common/runtime/runtimeEvent.js';
+import { localize } from '../../../../../nls.js';
+import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 
 /**
  * Timeline View for Nutanaa Studio OS.
  *
- * Responsibilities:
+ * Responsibilities: 
  * - Chronological event stream display
  * - Filter by event type, severity, source
  * - Search functionality
  * - Export capability
  */
-export class TimelineView extends ViewPane {
+export class TimelineView extends FilterViewPane {
 
 	private static readonly FILTER_STATE_KEY = 'nutanaa.timeline.filter';
 	private static readonly EVENTS_STORE_KEY = 'nutanaa.timeline.events';
@@ -40,7 +42,7 @@ export class TimelineView extends ViewPane {
 	public readonly onDidSelectEvent = this._onDidSelectEvent.event;
 
 	private container!: HTMLElement;
-	private filterContainer!: HTMLElement;
+	private timelineFilterContainer!: HTMLElement;
 	private searchContainer!: HTMLElement;
 	private listContainer!: HTMLElement;
 	private scrollContainer!: HTMLElement;
@@ -49,25 +51,22 @@ export class TimelineView extends ViewPane {
 	private filter: ITimelineFilter = {};
 	private searchQuery: string = '';
 
-	private readonly _register: DisposableStore;
-
 	constructor(
-		options: ViewPaneOptions,
-		@IInstantiationService instantiationService: IInstantiationService,
-		@IContextViewService contextViewService: IContextViewService,
-		@ILogService logService: ILogService,
-		@IThemeService themeService: IThemeService,
-		@IStorageService storageService: IStorageService,
-		@IHoverService hoverService: IHoverService,
-		@IKeybindingService keybindingService: KeybindingService,
-		@IRuntimeEventBus private readonly runtimeEventBus: IRuntimeEventBus,
-		@IRuntimeStateService private readonly runtimeStateService: IRuntimeStateService,
+		options: IFilterViewPaneOptions,
+		@IKeybindingService keybindingService: IKeybindingService,
+		@IContextMenuService contextMenuService: IContextMenuService,
 		@IConfigurationService configurationService: IConfigurationService,
-		@ICommandService private readonly commandService: ICommandService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
+		@IInstantiationService instantiationService: IInstantiationService,
+		@IOpenerService openerService: IOpenerService,
+		@IThemeService themeService: IThemeService,
+		@IHoverService hoverService: IHoverService,
+		@IStorageService private readonly storageService: IStorageService,
+		@ILogService logService: ILogService,
+		@IRuntimeEventBus private readonly runtimeEventBus: IRuntimeEventBus,
 	) {
-		super(options, instantiationService, contextViewService, configurationService, keybindingService, themeService, storageService, logService, hoverService);
-
-		this._register = new DisposableStore();
+		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
 		this.loadEvents();
 		this.loadFilterState();
@@ -76,6 +75,9 @@ export class TimelineView extends ViewPane {
 
 	protected override renderBody(container: HTMLElement): void {
 		this.container = container;
+	}
+
+	protected layoutBodyContent(height: number, width: number): void {
 		this.container.classList.add('nutanaa-timeline');
 
 		this.renderFilterBar();
@@ -111,7 +113,7 @@ export class TimelineView extends ViewPane {
 	}
 
 	private renderFilterBar(): void {
-		this.filterContainer = append(this.container, $('.timeline-filter'));
+		this.timelineFilterContainer = append(this.container, $('.timeline-filter'));
 
 		// Event type filters
 		const eventTypes: Array<{ type: TimelineEventType; label: string; icon: string }> = [
@@ -126,19 +128,19 @@ export class TimelineView extends ViewPane {
 		];
 
 		for (const et of eventTypes) {
-			const button = append(this.filterContainer, $(`.filter-toggle${this.isEventTypeFiltered(et.type) ? ' active' : ''}`));
+			const button = append(this.timelineFilterContainer, $(`.filter-toggle${this.isEventTypeFiltered(et.type) ? ' active' : ''}`));
 			button.title = et.label;
-			button.innerHTML = `${et.icon}`;
+			button.textContent = et.icon;
 			button.dataset.type = et.type;
 
-			this._register(addStandardDisposableListener(button, 'click', () => {
+			this._register(addStandardDisposableListener(button as HTMLElement, 'click', () => {
 				this.toggleEventTypeFilter(et.type);
 			}));
 		}
 
 		// Clear filters button
-		const clearButton = append(this.filterContainer, $('button.clear-filters', {}, localize('clearFilters', 'Clear')));
-		this._register(addStandardDisposableListener(clearButton, 'click', () => {
+		const clearButton = append(this.timelineFilterContainer, $('button.clear-filters', {}, localize('clearFilters', 'Clear')));
+		this._register(addStandardDisposableListener(clearButton as HTMLElement, 'click', () => {
 			this.clearFilters();
 		}));
 	}
@@ -149,13 +151,13 @@ export class TimelineView extends ViewPane {
 		const searchInput = append(this.searchContainer, $('input.search-input', {
 			placeholder: localize('searchTimeline', 'Search timeline...'),
 		}));
-		this._register(addStandardDisposableListener(searchInput, 'input', () => {
-			this.searchQuery = searchInput.value;
+		this._register(addStandardDisposableListener(searchInput as HTMLElement, 'input', () => {
+			this.searchQuery = (searchInput as HTMLInputElement).value;
 			this.filterEvents();
 		}));
 
 		const exportButton = append(this.searchContainer, $('button.export-button', {}, localize('export', 'Export')));
-		this._register(addStandardDisposableListener(exportButton, 'click', () => {
+		this._register(addStandardDisposableListener(exportButton as HTMLElement, 'click', () => {
 			this.exportEvents();
 		}));
 	}
@@ -164,7 +166,7 @@ export class TimelineView extends ViewPane {
 		this.scrollContainer = append(this.container, $('.timeline-scroll'));
 		this.listContainer = append(this.scrollContainer, $('.timeline-list'));
 
-		this._register(addStandardDisposableListener(this.scrollContainer, 'scroll', () => {
+		this._register(addStandardDisposableListener(this.scrollContainer as HTMLElement, 'scroll', () => {
 			this.handleScroll();
 		}));
 
@@ -172,7 +174,7 @@ export class TimelineView extends ViewPane {
 	}
 
 	private renderEvents(): void {
-		this.listContainer.innerHTML = '';
+		clearNode(this.listContainer);
 
 		const filtered = this.getFilteredEvents();
 
@@ -201,7 +203,7 @@ export class TimelineView extends ViewPane {
 		}));
 
 		const icon = append(element, $('.event-icon'));
-		icon.innerHTML = this.getEventIcon(event.type);
+		icon.textContent = this.getEventIcon(event.type);
 		icon.title = event.type;
 
 		const content = append(element, $('.event-content'));
@@ -211,8 +213,6 @@ export class TimelineView extends ViewPane {
 		const title = append(header, $('span.event-title', {}, event.title));
 		title.title = event.title;
 
-		const time = append(header, $('span.event-time', {}, this.formatTime(event.timestamp)));
-
 		const description = append(content, $('span.event-description', {}, event.description));
 		description.title = event.description;
 
@@ -221,7 +221,7 @@ export class TimelineView extends ViewPane {
 			source.title = event.source;
 		}
 
-		this._register(addStandardDisposableListener(element, 'click', () => {
+		this._register(addStandardDisposableListener(element as HTMLElement, 'click', () => {
 			this._onDidSelectEvent.fire(event);
 		}));
 
@@ -268,8 +268,7 @@ export class TimelineView extends ViewPane {
 			if (this.searchQuery) {
 				const query = this.searchQuery.toLowerCase();
 				if (!event.title.toLowerCase().includes(query) &&
-					!event.description.toLowerCase().includes(query) &&
-					!event.source?.toLowerCase().includes(query)) {
+					!event.description.toLowerCase().includes(query)) {
 					return false;
 				}
 			}
@@ -295,16 +294,14 @@ export class TimelineView extends ViewPane {
 	}
 
 	private toggleEventTypeFilter(type: TimelineEventType): void {
-		if (!this.filter.eventTypes) {
-			this.filter.eventTypes = [];
-		}
-
-		const index = this.filter.eventTypes.indexOf(type);
+		const currentTypes = this.filter.eventTypes || [];
+		const index = currentTypes.indexOf(type);
 		if (index >= 0) {
-			this.filter.eventTypes.splice(index, 1);
+			currentTypes.splice(index, 1);
 		} else {
-			this.filter.eventTypes.push(type);
+			currentTypes.push(type);
 		}
+		this.filter = { ...this.filter, eventTypes: currentTypes };
 
 		this.updateFilterButtons();
 		this.filterEvents();
@@ -314,7 +311,7 @@ export class TimelineView extends ViewPane {
 	private clearFilters(): void {
 		this.filter = {};
 		this.searchQuery = '';
-		const searchInput = this.searchContainer?.querySelector('.search-input') as HTMLInputElement;
+		const searchInput = this.searchContainer?.querySelector('.search-input') as HTMLInputElement | null;
 		if (searchInput) {
 			searchInput.value = '';
 		}
@@ -324,10 +321,10 @@ export class TimelineView extends ViewPane {
 	}
 
 	private updateFilterButtons(): void {
-		const buttons = this.filterContainer.querySelectorAll('.filter-toggle');
+		const buttons = this.timelineFilterContainer.querySelectorAll('.filter-toggle');
 		buttons.forEach(btn => {
-			const type = btn.dataset.type as TimelineEventType;
-			btn.classList.toggle('active', this.isEventTypeFiltered(type));
+			const type = (btn as HTMLElement).dataset.type as TimelineEventType;
+			(btn as HTMLElement).classList.toggle('active', this.isEventTypeFiltered(type));
 		});
 	}
 
@@ -359,13 +356,6 @@ export class TimelineView extends ViewPane {
 		return iconMap[type] || '●';
 	}
 
-	private formatTime(timestamp: number): string {
-		return new Date(timestamp).toLocaleTimeString([], {
-			hour: '2-digit',
-			minute: '2-digit',
-			second: '2-digit',
-		});
-	}
 
 	private loadEvents(): void {
 		const stored = this.storageService.get(TimelineView.EVENTS_STORE_KEY, 0);
@@ -383,11 +373,11 @@ export class TimelineView extends ViewPane {
 		if (this.events.length > TimelineView.MAX_EVENTS) {
 			this.events = this.events.slice(-TimelineView.MAX_EVENTS);
 		}
-		this.storageService.store(TimelineView.EVENTS_STORE_KEY, JSON.stringify(this.events), 0);
+		this.storageService.store(TimelineView.EVENTS_STORE_KEY, JSON.stringify(this.events), StorageScope.APPLICATION, StorageTarget.USER);
 	}
 
 	private loadFilterState(): void {
-		const stored = this.storageService.get(TimelineView.FILTER_STATE_KEY, 0);
+		const stored = this.storageService.get(TimelineView.FILTER_STATE_KEY, StorageScope.APPLICATION);
 		if (stored) {
 			try {
 				this.filter = JSON.parse(stored);
@@ -398,184 +388,128 @@ export class TimelineView extends ViewPane {
 	}
 
 	private saveFilterState(): void {
-		this.storageService.store(TimelineView.FILTER_STATE_KEY, JSON.stringify(this.filter), 0);
+		this.storageService.store(TimelineView.FILTER_STATE_KEY, JSON.stringify(this.filter), StorageScope.APPLICATION, StorageTarget.USER);
 	}
 
 	private setupEventListeners(): void {
-		// Subscribe to all runtime events
-		this._register(this.runtimeEventBus.on(RuntimeEventType.AgentStarted, (event) => {
+		this._register(this.runtimeEventBus.on<AgentEvent>(RuntimeEventType.AgentStarted, (event: RuntimeEvent<AgentEvent>) => {
 			this.addEvent({
 				type: 'agent_started',
 				title: 'Agent Started',
-				description: event.payload?.agentId || 'Unknown',
+				description: event.payload.id,
 				source: 'agent',
 				severity: 'info',
-				metadata: event.payload,
+				metadata: event.payload as unknown as Record<string, unknown>,
 			});
 		}));
 
-		this._register(this.runtimeEventBus.on(RuntimeEventType.AgentCompleted, (event) => {
+		this._register(this.runtimeEventBus.on<AgentEvent>(RuntimeEventType.AgentCompleted, (event: RuntimeEvent<AgentEvent>) => {
 			this.addEvent({
 				type: 'agent_completed',
 				title: 'Agent Completed',
-				description: event.payload?.agentId || 'Unknown',
+				description: event.payload.id,
 				source: 'agent',
 				severity: 'info',
-				metadata: event.payload,
+				metadata: event.payload as unknown as Record<string, unknown>,
 			});
 		}));
 
-		this._register(this.runtimeEventBus.on(RuntimeEventType.AgentFailed, (event) => {
+		this._register(this.runtimeEventBus.on<AgentEvent>(RuntimeEventType.AgentFailed, (event: RuntimeEvent<AgentEvent>) => {
 			this.addEvent({
 				type: 'agent_failed',
 				title: 'Agent Failed',
-				description: event.payload?.error || 'Unknown error',
+				description: event.payload.message || 'Unknown error',
 				source: 'agent',
 				severity: 'error',
-				metadata: event.payload,
+				metadata: event.payload as unknown as Record<string, unknown>,
 			});
 		}));
 
-		this._register(this.runtimeEventBus.on(RuntimeEventType.TaskScheduled, (event) => {
+		this._register(this.runtimeEventBus.on<TaskEvent>(RuntimeEventType.TaskQueued, (event: RuntimeEvent<TaskEvent>) => {
 			this.addEvent({
 				type: 'task_started',
-				title: 'Task Scheduled',
-				description: event.payload?.taskId || 'Unknown',
+				title: 'Task Queued',
+				description: event.payload.id,
 				source: 'task',
 				severity: 'info',
-				metadata: event.payload,
+				metadata: event.payload as unknown as Record<string, unknown>,
 			});
 		}));
 
-		this._register(this.runtimeEventBus.on(RuntimeEventType.TaskCompleted, (event) => {
+		this._register(this.runtimeEventBus.on<TaskEvent>(RuntimeEventType.TaskCompleted, (event: RuntimeEvent<TaskEvent>) => {
 			this.addEvent({
 				type: 'task_completed',
 				title: 'Task Completed',
-				description: event.payload?.taskId || 'Unknown',
+				description: event.payload.id,
 				source: 'task',
 				severity: 'info',
-				metadata: event.payload,
+				metadata: event.payload as unknown as Record<string, unknown>,
 			});
 		}));
 
-		this._register(this.runtimeEventBus.on(RuntimeEventType.WorkflowStarted, (event) => {
+		this._register(this.runtimeEventBus.on<WorkflowEvent>(RuntimeEventType.WorkflowStarted, (event: RuntimeEvent<WorkflowEvent>) => {
 			this.addEvent({
 				type: 'workflow_started',
 				title: 'Workflow Started',
-				description: event.payload?.workflowId || 'Unknown',
+				description: event.payload.id,
 				source: 'workflow',
 				severity: 'info',
-				metadata: event.payload,
+				metadata: event.payload as unknown as Record<string, unknown>,
 			});
 		}));
 
-		this._register(this.runtimeEventBus.on(RuntimeEventType.WorkflowCompleted, (event) => {
+		this._register(this.runtimeEventBus.on<WorkflowEvent>(RuntimeEventType.WorkflowCompleted, (event: RuntimeEvent<WorkflowEvent>) => {
 			this.addEvent({
 				type: 'workflow_completed',
 				title: 'Workflow Completed',
-				description: event.payload?.workflowId || 'Unknown',
+				description: event.payload.id,
 				source: 'workflow',
 				severity: 'info',
-				metadata: event.payload,
+				metadata: event.payload as unknown as Record<string, unknown>,
 			});
 		}));
 
-		this._register(this.runtimeEventBus.on(RuntimeEventType.WorkflowFailed, (event) => {
+		this._register(this.runtimeEventBus.on<WorkflowEvent>(RuntimeEventType.WorkflowFailed, (event: RuntimeEvent<WorkflowEvent>) => {
 			this.addEvent({
 				type: 'workflow_failed',
 				title: 'Workflow Failed',
-				description: event.payload?.error || 'Unknown',
+				description: event.payload.name,
 				source: 'workflow',
 				severity: 'error',
-				metadata: event.payload,
+				metadata: event.payload as unknown as Record<string, unknown>,
 			});
 		}));
 
-		this._register(this.runtimeEventBus.on(RuntimeEventType.ProviderHealthy, (event) => {
+		this._register(this.runtimeEventBus.on<ProviderEvent>(RuntimeEventType.ProviderHealthy, (event: RuntimeEvent<ProviderEvent>) => {
 			this.addEvent({
 				type: 'provider_connected',
 				title: 'Provider Connected',
-				description: event.payload?.name || 'Unknown',
+				description: event.payload.name,
 				source: 'provider',
 				severity: 'info',
-				metadata: event.payload,
+				metadata: event.payload as unknown as Record<string, unknown>,
 			});
 		}));
 
-		this._register(this.runtimeEventBus.on(RuntimeEventType.ProviderUnhealthy, (event) => {
+		this._register(this.runtimeEventBus.on<ProviderEvent>(RuntimeEventType.ProviderUnhealthy, (event: RuntimeEvent<ProviderEvent>) => {
 			this.addEvent({
 				type: 'provider_disconnected',
 				title: 'Provider Disconnected',
-				description: event.payload?.name || 'Unknown',
+				description: event.payload.name,
 				source: 'provider',
 				severity: 'warning',
-				metadata: event.payload,
+				metadata: event.payload as unknown as Record<string, unknown>,
 			});
 		}));
 
-		this._register(this.runtimeEventBus.on(RuntimeEventType.ToolStarted, (event) => {
-			this.addEvent({
-				type: 'tool_started',
-				title: 'Tool Started',
-				description: event.payload?.toolName || 'Unknown',
-				source: 'tool',
-				severity: 'info',
-				metadata: event.payload,
-			});
-		}));
-
-		this._register(this.runtimeEventBus.on(RuntimeEventType.ToolCompleted, (event) => {
-			this.addEvent({
-				type: 'tool_completed',
-				title: 'Tool Completed',
-				description: event.payload?.toolName || 'Unknown',
-				source: 'tool',
-				severity: 'info',
-				metadata: event.payload,
-			});
-		}));
-
-		this._register(this.runtimeEventBus.on(RuntimeEventType.ToolFailed, (event) => {
-			this.addEvent({
-				type: 'tool_failed',
-				title: 'Tool Failed',
-				description: event.payload?.error || 'Unknown',
-				source: 'tool',
-				severity: 'error',
-				metadata: event.payload,
-			});
-		}));
-
-		this._register(this.runtimeEventBus.on(RuntimeEventType.RuntimeError, (event) => {
+		this._register(this.runtimeEventBus.on<LogEvent>(RuntimeEventType.RuntimeError, (event: RuntimeEvent<LogEvent>) => {
 			this.addEvent({
 				type: 'error',
 				title: 'Runtime Error',
-				description: event.payload?.message || 'Unknown error',
+				description: event.payload.message,
 				source: 'runtime',
 				severity: 'error',
-				metadata: event.payload,
-			});
-		}));
-
-		this._register(this.runtimeEventBus.on(RuntimeEventType.RuntimeWarning, (event) => {
-			this.addEvent({
-				type: 'warning',
-				title: 'Runtime Warning',
-				description: event.payload?.message || 'Unknown warning',
-				source: 'runtime',
-				severity: 'warning',
-				metadata: event.payload,
-			});
-		}));
-
-		this._register(this.runtimeEventBus.on(RuntimeEventType.RuntimeInfo, (event) => {
-			this.addEvent({
-				type: 'info',
-				title: 'Runtime Info',
-				description: event.payload?.message || 'Information',
-				source: 'runtime',
-				severity: 'info',
-				metadata: event.payload,
+				metadata: event.payload as unknown as Record<string, unknown>,
 			});
 		}));
 	}
@@ -635,9 +569,6 @@ export class TimelineView extends ViewPane {
 
 	public override dispose(): void {
 		this.saveEvents();
-		this._register.dispose();
 		super.dispose();
 	}
 }
-
-import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';

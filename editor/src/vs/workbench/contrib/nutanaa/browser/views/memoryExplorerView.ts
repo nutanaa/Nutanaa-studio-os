@@ -3,24 +3,24 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
-import { Emitter, Event } from '../../../../base/common/event.js';
-import { append, $, addStandardDisposableListener } from '../../../../base/browser/dom.js';
-import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
-import { ILogService } from '../../../../platform/log/common/log.js';
-import { IThemeService } from '../../../../platform/theme/common/themeService.js';
-import { IStorageService } from '../../../../platform/storage/common/storage.js';
-import { IHoverService } from '../../../../platform/hover/browser/hover.js';
-import { KeybindingService } from '../../../../platform/keybinding/browser/keybindingService.js';
-import { ViewPane, ViewPaneOptions } from '../../../browser/parts/views/viewPane.js';
-import { IRuntimeEventBus, RuntimeEventType } from '../../common/runtimeEventBus.js';
-import { IRuntimeStateService } from '../../common/runtimeState.js';
+import { append, $, clearNode, addStandardDisposableListener } from '../../../../../base/browser/dom.js';
+import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
+import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
+import { IStorageService } from '../../../../../platform/storage/common/storage.js';
+import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
+import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
+import { IViewDescriptorService } from '../../../../common/views.js';
+import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
+import { FilterViewPane, IFilterViewPaneOptions } from '../../../../browser/parts/views/viewPane.js';
+import { IRuntimeStateService } from '../../common/runtime/runtimeState.js';
 import { IMemoryExplorerEntry, IMemoryExplorerFilter } from '../../models/studioModel.js';
-import { IMemoryManager, MemoryStorageType } from '../../common/memoryManager.js';
-import { localize } from '../../../../nls.js';
-import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { IMemoryManager } from '../../common/memory/memoryManager.js';
+import { MemoryStorageType } from '../../models/aiCore.js';
+import { localize } from '../../../../../nls.js';
+import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 
 /**
  * Memory Explorer View for Nutanaa Studio OS.
@@ -31,10 +31,10 @@ import { ICommandService } from '../../../../platform/commands/common/commands.j
  * - Memory deletion
  * - Refresh capability
  */
-export class MemoryExplorerView extends ViewPane {
+export class MemoryExplorerView extends FilterViewPane {
 
 	private container!: HTMLElement;
-	private filterContainer!: HTMLElement;
+	private memoryFilterContainer!: HTMLElement;
 	private searchContainer!: HTMLElement;
 	private listContainer!: HTMLElement;
 
@@ -42,30 +42,30 @@ export class MemoryExplorerView extends ViewPane {
 	private filter: IMemoryExplorerFilter = {};
 	private searchQuery: string = '';
 
-	private readonly _register: DisposableStore;
-
 	constructor(
-		options: ViewPaneOptions,
+		options: IFilterViewPaneOptions,
+		@IKeybindingService keybindingService: IKeybindingService,
+		@IContextMenuService contextMenuService: IContextMenuService,
+		@IConfigurationService configurationService: IConfigurationService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
 		@IInstantiationService instantiationService: IInstantiationService,
-		@IContextViewService contextViewService: IContextViewService,
-		@ILogService logService: ILogService,
+		@IOpenerService openerService: IOpenerService,
 		@IThemeService themeService: IThemeService,
-		@IStorageService storageService: IStorageService,
 		@IHoverService hoverService: IHoverService,
-		@IKeybindingService keybindingService: KeybindingService,
-		@IRuntimeEventBus private readonly runtimeEventBus: IRuntimeEventBus,
+		@IStorageService storageService: IStorageService,
+		@ILogService logService: ILogService,
 		@IRuntimeStateService private readonly runtimeStateService: IRuntimeStateService,
 		@IMemoryManager private readonly memoryManager: IMemoryManager,
-		@IConfigurationService configurationService: IConfigurationService,
-		@ICommandService private readonly commandService: ICommandService,
 	) {
-		super(options, instantiationService, contextViewService, configurationService, keybindingService, themeService, storageService, logService, hoverService);
-
-		this._register = new DisposableStore();
+		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 	}
 
 	protected override renderBody(container: HTMLElement): void {
 		this.container = container;
+	}
+
+	protected layoutBodyContent(height: number, width: number): void {
 		this.container.classList.add('nutanaa-memory-explorer');
 
 		this.renderFilterBar();
@@ -76,7 +76,7 @@ export class MemoryExplorerView extends ViewPane {
 	}
 
 	private renderFilterBar(): void {
-		this.filterContainer = append(this.container, $('.memory-filter'));
+		this.memoryFilterContainer = append(this.container, $('.memory-filter'));
 
 		const types: Array<{ type: MemoryStorageType; label: string; icon: string }> = [
 			{ type: 'conversation', label: 'Conversation', icon: '💬' },
@@ -87,27 +87,27 @@ export class MemoryExplorerView extends ViewPane {
 		];
 
 		for (const type of types) {
-			const button = append(this.filterContainer, $(`.filter-toggle${this.isTypeFiltered(type.type) ? ' active' : ''}`));
+			const button = append(this.memoryFilterContainer, $(`.filter-toggle${this.isTypeFiltered(type.type) ? ' active' : ''}`));
 			button.title = type.label;
-			button.innerHTML = type.icon;
-			button.dataset.type = type.type;
+			button.textContent = type.icon;
+			(button as HTMLElement).dataset.type = type.type;
 
-			this._register(addStandardDisposableListener(button, 'click', () => {
+			this._register(addStandardDisposableListener(button as HTMLElement, 'click', () => {
 				this.toggleTypeFilter(type.type);
 			}));
 		}
 
-		const spacer = append(this.filterContainer, $('div.filter-spacer'));
+		append(this.memoryFilterContainer, $('div.filter-spacer'));
 
-		const refreshButton = append(this.filterContainer, $('button.refresh-button', {}, '↻'));
+		const refreshButton = append(this.memoryFilterContainer, $('button.refresh-button', {}, '↻'));
 		refreshButton.title = localize('refresh', 'Refresh');
-		this._register(addStandardDisposableListener(refreshButton, 'click', () => {
+		this._register(addStandardDisposableListener(refreshButton as HTMLElement, 'click', () => {
 			this.loadMemories();
 		}));
 
-		const clearAllButton = append(this.filterContainer, $('button.clear-button', {}, '🗑'));
+		const clearAllButton = append(this.memoryFilterContainer, $('button.clear-button', {}, '🗑'));
 		clearAllButton.title = localize('clearAll', 'Clear All');
-		this._register(addStandardDisposableListener(clearAllButton, 'click', () => {
+		this._register(addStandardDisposableListener(clearAllButton as HTMLElement, 'click', () => {
 			this.clearAllMemories();
 		}));
 	}
@@ -118,8 +118,8 @@ export class MemoryExplorerView extends ViewPane {
 		const searchInput = append(this.searchContainer, $('input.search-input', {
 			placeholder: localize('searchMemory', 'Search memories...'),
 		}));
-		this._register(addStandardDisposableListener(searchInput, 'input', () => {
-			this.searchQuery = searchInput.value;
+		this._register(addStandardDisposableListener(searchInput as HTMLElement, 'input', () => {
+			this.searchQuery = (searchInput as HTMLInputElement).value;
 			this.filterMemories();
 		}));
 	}
@@ -134,7 +134,7 @@ export class MemoryExplorerView extends ViewPane {
 		const filtered = this.getFilteredMemories();
 
 		if (filtered.length === 0) {
-			this.listContainer.innerHTML = '';
+			clearNode(this.listContainer);
 			append(this.listContainer, $('div.empty-state', {}, localize('noMemories', 'No memories to display')));
 			return;
 		}
@@ -151,9 +151,9 @@ export class MemoryExplorerView extends ViewPane {
 		const fragment = document.createDocumentFragment();
 
 		for (const [type, memories] of grouped) {
-			const groupHeader = append(fragment, $('div.memory-group-header'));
-			groupHeader.innerHTML = this.getTypeIcon(type as MemoryStorageType);
-			groupHeader.dataset.type = type;
+			const groupHeader = fragment.appendChild($('div.memory-group-header'));
+			groupHeader.textContent = this.getTypeIcon(type as MemoryStorageType);
+			(groupHeader as HTMLElement).dataset.type = type;
 
 			for (const memory of memories) {
 				const memoryElement = this.createMemoryElement(memory);
@@ -161,7 +161,7 @@ export class MemoryExplorerView extends ViewPane {
 			}
 		}
 
-		this.listContainer.innerHTML = '';
+		clearNode(this.listContainer);
 		this.listContainer.appendChild(fragment);
 	}
 
@@ -195,26 +195,22 @@ export class MemoryExplorerView extends ViewPane {
 		const time = append(metadata, $('span.memory-time', {}, this.formatRelativeTime(memory.timestamp)));
 		time.title = new Date(memory.timestamp).toLocaleString();
 
-		const access = append(metadata, $('span.memory-access', {}, `${memory.accessCount} accesses`));
-
-		const score = append(metadata, $('span.memory-score', {}, `score: ${memory.score.toFixed(2)}`));
-
 		// Actions
 		const actions = append(element, $('.memory-actions'));
 
 		const viewButton = append(actions, $('button.action-button', {}, '👁'));
 		viewButton.title = localize('view', 'View');
-		this._register(addStandardDisposableListener(viewButton, 'click', () => {
+		this._register(addStandardDisposableListener(viewButton as HTMLElement, 'click', () => {
 			this.viewMemory(memory);
 		}));
 
 		const deleteButton = append(actions, $('button.action-button.danger', {}, '🗑'));
 		deleteButton.title = localize('delete', 'Delete');
-		this._register(addStandardDisposableListener(deleteButton, 'click', () => {
+		this._register(addStandardDisposableListener(deleteButton as HTMLElement, 'click', () => {
 			this.deleteMemory(memory.id);
 		}));
 
-		this._register(addStandardDisposableListener(element, 'click', (e) => {
+		this._register(addStandardDisposableListener(element as HTMLElement, 'click', (e) => {
 			if (!(e.target as HTMLElement).closest('.memory-actions')) {
 				this.viewMemory(memory);
 			}
@@ -262,38 +258,37 @@ export class MemoryExplorerView extends ViewPane {
 	}
 
 	private toggleTypeFilter(type: MemoryStorageType): void {
-		if (!this.filter.types) {
-			this.filter.types = [];
-		}
-
-		const index = this.filter.types.indexOf(type);
+		const current = this.filter.types || [];
+		const index = current.indexOf(type);
 		if (index >= 0) {
-			this.filter.types.splice(index, 1);
+			current.splice(index, 1);
 		} else {
-			this.filter.types.push(type);
+			current.push(type);
 		}
+		this.filter = { ...this.filter, types: current };
 
 		this.updateFilterButtons();
 		this.filterMemories();
 	}
 
 	private updateFilterButtons(): void {
-		const buttons = this.filterContainer.querySelectorAll('.filter-toggle');
+		const buttons = this.memoryFilterContainer.querySelectorAll('.filter-toggle');
 		buttons.forEach(btn => {
-			const type = btn.dataset.type as MemoryStorageType;
-			btn.classList.toggle('active', this.isTypeFiltered(type));
+			const type = (btn as HTMLElement).dataset.type as MemoryStorageType;
+			(btn as HTMLElement).classList.toggle('active', this.isTypeFiltered(type));
 		});
 	}
 
 	private getTypeIcon(type: MemoryStorageType): string {
 		const icons: Record<MemoryStorageType, string> = {
-			conversation: '💬',
-			agent: '🤖',
-			workspace: '📁',
-			project: '📂',
-			knowledge: '📚',
+			conversation: 'ðŸ’¬',
+			agent: 'ðŸ¤–',
+			workspace: 'ðŸ“',
+			project: 'ðŸ“‚',
+			knowledge: 'ðŸ“š',
+			session: 'ðŸ”—',
 		};
-		return icons[type] || '📦';
+		return icons[type] || 'ðŸ“¦';
 	}
 
 	private formatRelativeTime(timestamp: number): string {
@@ -320,14 +315,14 @@ export class MemoryExplorerView extends ViewPane {
 			const content = typeof entry.content === 'string' ? entry.content : JSON.stringify(entry.content);
 			const preview = content.slice(0, 100) + (content.length > 100 ? '...' : '');
 
-			this.memories.push({
-				id: entry.id,
-				type: entry.type,
-				key: entry.key,
-				content,
-				preview,
-				tags: entry.tags,
-				timestamp: entry.timestamp,
+		this.memories.push({
+			id: entry.id,
+			type: entry.type as 'conversation' | 'agent' | 'workspace' | 'project' | 'knowledge',
+			key: entry.key,
+			content,
+			preview,
+			tags: entry.tags,
+			timestamp: entry.timestamp,
 				lastAccessed: entry.lastAccessedTimestamp,
 				accessCount: entry.accessCount,
 				score: entry.score,
@@ -359,9 +354,6 @@ export class MemoryExplorerView extends ViewPane {
 	}
 
 	public override dispose(): void {
-		this._register.dispose();
 		super.dispose();
 	}
 }
-
-import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';

@@ -19,6 +19,7 @@ interface ILLMProvider {
 
 export class GeminiProvider implements ILLMProvider {
 	readonly config: IProviderConfig;
+	readonly provider: unknown = this;
 	private connected = false;
 
 	constructor(config: IProviderConfig) {
@@ -181,3 +182,5 @@ export class GeminiProvider implements ILLMProvider {
 		return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 	}
 }
+
+

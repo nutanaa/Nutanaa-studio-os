@@ -5,8 +5,8 @@
 
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { IAgentStateService } from '../common/agentStateService.js';
-import { IAgentHealthService } from '../common/agentHealthService.js';
+import { IAgentStateService } from '../common/agents/agentStateService.js';
+import { IAgentHealthService } from '../common/agents/agentHealthService.js';
 
 export const IAgentSupervisor = createDecorator<IAgentSupervisor>('agentSupervisor');
 

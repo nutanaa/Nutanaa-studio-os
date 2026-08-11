@@ -19,6 +19,7 @@ interface ILLMProvider {
 
 export class OllamaProvider implements ILLMProvider {
 	readonly config: IProviderConfig;
+	readonly provider: unknown = this;
 	private connected = false;
 
 	constructor(config: IProviderConfig) {
@@ -180,3 +181,5 @@ export class OllamaProvider implements ILLMProvider {
 		return data.response ?? '';
 	}
 }
+
+

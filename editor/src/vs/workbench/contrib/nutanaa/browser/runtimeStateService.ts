@@ -22,13 +22,13 @@ import {
 	IMetricsState,
 	ConnectionUpdate,
 	AgentUpdate,
-	ProviderUpdate,
+	AIProviderUpdate,
 	TaskUpdate,
 	WorkflowUpdate,
 	MetricsUpdate,
-} from '../common/runtimeState.js';
+} from '../common/runtime/runtimeState.js';
 
-import { IRuntimeEventBus } from '../common/runtimeEventBus.js';
+import { IRuntimeEventBus } from '../common/runtime/runtimeEventBus.js';
 
 import {
 	RuntimeEventType,
@@ -39,7 +39,7 @@ import {
 	TaskEvent,
 	LogEvent,
 	NotificationEvent,
-} from '../common/runtimeEvent.js';
+} from '../common/runtime/runtimeEvent.js';
 
 import {
 	INutanaaRuntimeConnectionService,
@@ -79,6 +79,10 @@ function buildInitialMemoryState(): IMemoryState {
 		agent: 0,
 		project: 0,
 		knowledge: 0,
+		global: 0,
+		character: 0,
+		story: 0,
+		prompt: 0,
 	};
 	return {
 		totalEntries: 0,
@@ -107,6 +111,120 @@ function buildInitialState(): IRuntimeState {
 		notifications: {},
 		metrics: buildInitialMetricsState(),
 		sessions: {},
+		enterprise: {
+			currentUser: undefined,
+			currentOrganization: undefined,
+			session: undefined,
+			isAuthenticated: false,
+			userPermissions: [],
+			userRoles: [],
+			organizationTeamIds: [],
+		},
+		clusterState: {
+			nodes: new Map(),
+			masterNode: undefined,
+			totalLoad: 0,
+			averageLoad: 0,
+		},
+		enterprisePlugins: {
+			installed: new Map(),
+			marketplace: [],
+		},
+		enterpriseSecrets: {
+			secrets: new Map(),
+			accessLog: [],
+		},
+		production: {
+			telemetry: {
+				enabled: false,
+				anonymous: true,
+				eventsCount: 0,
+				sessionsCount: 0,
+			},
+			metrics: {
+				cpu: 0,
+				memory: 0,
+				gpu: 0,
+				disk: 0,
+				network: 0,
+				llmLatency: 0,
+				toolLatency: 0,
+				workflowLatency: 0,
+				agentLatency: 0,
+				tokenUsage: 0,
+			},
+			tracing: {
+				enabled: false,
+				activeTraces: 0,
+				sampleRate: 0,
+			},
+			logging: {
+				level: 'info',
+				entriesCount: 0,
+				retention: 0,
+			},
+			performance: {
+				startupTime: 0,
+				renderTime: 0,
+				slowTasks: 0,
+				memoryUsage: 0,
+				cpuUsage: 0,
+			},
+			cache: {
+				memorySize: 0,
+				diskSize: 0,
+				hitRate: 0,
+				evictions: 0,
+				embeddingCount: 0,
+				promptCount: 0,
+				toolCount: 0,
+				httpCount: 0,
+				providerCount: 0,
+			},
+			offline: {
+				enabled: false,
+				isOffline: false,
+				queuedRequests: 0,
+				lastSyncTime: 0,
+			},
+			backup: {
+				enabled: false,
+				lastBackup: undefined,
+				backupCount: 0,
+				totalSize: 0,
+			},
+			recovery: {
+				lastRecovery: undefined,
+				recoveryCount: 0,
+				pendingRecovery: false,
+			},
+			update: {
+				channel: 'stable',
+				available: false,
+				downloading: false,
+				installing: false,
+				lastCheck: undefined,
+				currentVersion: '1.0.0',
+				availableVersion: undefined,
+			},
+			packaging: {
+				isBuilding: false,
+				buildProgress: 0,
+				artifactCount: 0,
+				buildChannel: 'stable',
+			},
+			configuration: {
+				profileCount: 1,
+				activeProfile: 'default',
+				configVersion: '1.0.0',
+			},
+			health: {
+				status: 'unknown',
+				score: 0,
+				ready: true,
+				alive: true,
+			},
+		},
 	};
 }
 
@@ -252,7 +370,52 @@ export class RuntimeStateService extends Disposable implements IRuntimeStateServ
 		this._onDidChangeState.fire(this._state);
 	}
 
-	public updateProviders(providers: ProviderUpdate): void {
+	public updateProviders(update: AIProviderUpdate): void {
+		// Start with existing providers
+		const providers = { ...this._state.providers };
+
+		// Handle health updates
+		if (update.healthUpdates) {
+			for (const healthUpdate of update.healthUpdates) {
+				const existing = Object.values(providers).find(
+					p => p.summary.name === healthUpdate.name
+				);
+				const summary = existing?.summary ?? {
+					id: healthUpdate.name,
+					name: healthUpdate.name,
+					type: 'anthropic' as const,
+					healthy: healthUpdate.health.isHealthy,
+					status: healthUpdate.health.isHealthy ? 'healthy' : 'unhealthy',
+					message: '',
+					models: [] as readonly string[],
+					activeModel: '',
+				};
+				providers[summary.id] = {
+					summary,
+					lastCheckedAt: healthUpdate.health.lastChecked,
+				};
+			}
+		}
+
+		// Handle default model updates
+		if (update.defaultModelUpdates) {
+			for (const modelUpdate of update.defaultModelUpdates) {
+				const provider = Object.values(providers).find(
+					p => p.summary.type === modelUpdate.providerType
+				);
+				if (provider) {
+					const updatedSummary = {
+						...provider.summary,
+						activeModel: modelUpdate.modelId,
+					};
+					providers[provider.summary.id] = {
+						...provider,
+						summary: updatedSummary,
+					};
+				}
+			}
+		}
+
 		this._state = { ...this._state, providers };
 		this._onProvidersChanged.fire(providers);
 		this._onDidChangeState.fire(this._state);
@@ -292,6 +455,8 @@ export class RuntimeStateService extends Disposable implements IRuntimeStateServ
 
 		this._state = { ...this._state, logs };
 		this._onLogsChanged.fire(logs);
+		console.count('[RuntimeState] fire');
+		console.trace('[RuntimeState] fire: appendLog');
 		this._onDidChangeState.fire(this._state);
 	}
 
@@ -311,8 +476,6 @@ export class RuntimeStateService extends Disposable implements IRuntimeStateServ
 		this._state = buildInitialState();
 		this._serial = 0;
 
-		// Fire every granular event so subscribers that only listen to a single
-		// slice still get notified on a full reset.
 		this._onConnectionChanged.fire(this._state.connection);
 		this._onAgentsChanged.fire(this._state.agents);
 		this._onProvidersChanged.fire(this._state.providers);

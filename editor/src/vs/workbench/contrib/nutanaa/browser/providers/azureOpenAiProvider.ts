@@ -19,6 +19,7 @@ interface ILLMProvider {
 
 export class AzureOpenAIProvider implements ILLMProvider {
 	readonly config: IProviderConfig;
+	readonly provider: unknown = this;
 	private connected = false;
 
 	constructor(config: IProviderConfig) {
@@ -41,8 +42,9 @@ export class AzureOpenAIProvider implements ILLMProvider {
 			const response = await fetch(this.getApiUrl(), {
 				method: 'POST',
 				headers: {
-					'Authorization': `Bearer ${this.config.apiKey}`,
+					'Authorization': `Bearer ${this.config.apiKey ?? ''}`,
 					'Content-Type': 'application/json',
+					'api-key': this.config.apiKey ?? '',
 				},
 				body: JSON.stringify({
 					messages: [{ role: 'user', content: 'health check' }],
@@ -50,7 +52,7 @@ export class AzureOpenAIProvider implements ILLMProvider {
 				}),
 			});
 
-			this.connected = response.ok || response.status === 400; // 400 is ok (just means model needs proper prompt)
+			this.connected = response.ok || response.status === 400; // 400 is ok (model needs proper prompt)
 			return this.connected;
 		} catch {
 			this.connected = false;
@@ -69,9 +71,9 @@ export class AzureOpenAIProvider implements ILLMProvider {
 			const response = await fetch(this.getApiUrl(), {
 				method: 'POST',
 				headers: {
-					'Authorization': `Bearer ${this.config.apiKey}`,
+					'Authorization': `Bearer ${this.config.apiKey ?? ''}`,
 					'Content-Type': 'application/json',
-					'api-key': this.config.apiKey,
+					'api-key': this.config.apiKey ?? '',
 				},
 				body: JSON.stringify({
 					messages: [{ role: 'user', content: 'health check' }],
@@ -92,7 +94,7 @@ export class AzureOpenAIProvider implements ILLMProvider {
 				errorCount: isHealthy ? 0 : 1,
 				modelAvailable: isHealthy,
 			};
-		} catch (err) {
+		} catch {
 			return {
 				providerName: this.config.name,
 				isHealthy: false,
@@ -117,9 +119,9 @@ export class AzureOpenAIProvider implements ILLMProvider {
 		const response = await fetch(url, {
 			method: 'POST',
 			headers: {
-				'Authorization': `Bearer ${this.config.apiKey}`,
+				'Authorization': `Bearer ${this.config.apiKey ?? ''}`,
 				'Content-Type': 'application/json',
-				'api-key': this.config.apiKey,
+				'api-key': this.config.apiKey ?? '',
 			},
 			body: JSON.stringify(body),
 		});
@@ -181,9 +183,9 @@ export class AzureOpenAIProvider implements ILLMProvider {
 		const response = await fetch(url, {
 			method: 'POST',
 			headers: {
-				'Authorization': `Bearer ${this.config.apiKey}`,
+				'Authorization': `Bearer ${this.config.apiKey ?? ''}`,
 				'Content-Type': 'application/json',
-				'api-key': this.config.apiKey,
+				'api-key': this.config.apiKey ?? '',
 			},
 			body: JSON.stringify(body),
 		});

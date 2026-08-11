@@ -212,9 +212,6 @@
         "name": "renderMermaidDiagram",
         "displayName": "Mermaid Renderer",
         "toolReferenceName": "renderMermaidDiagram",
-        "legacyToolReferenceFullNames": [
-          "vscode.mermaid-chat-features/renderMermaidDiagram"
-        ],
         "canBeReferencedInPrompt": true,
         "modelDescription": "Renders a Mermaid diagram from Mermaid.js markup.",
         "userDescription": "Render a Mermaid.js diagram from markup.",

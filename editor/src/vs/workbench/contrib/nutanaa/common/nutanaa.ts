@@ -124,4 +124,13 @@ export interface INutanaaRuntimeConnectionService {
 	 * {@link NutanaaRuntimeConnectionState.Connected}.
 	 */
 	getProviders(): Promise<readonly INutanaaProviderSummary[]>;
+
+	/**
+	 * Execute an agent through the runtime backend.
+	 */
+	executeAgent(name: string, payload: Record<string, unknown>): Promise<{
+		success: boolean;
+		output?: unknown;
+		error?: string;
+	}>;
 }

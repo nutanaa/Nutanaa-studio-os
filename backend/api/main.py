@@ -27,11 +27,13 @@ and `NUTANAA_RUNTIME_WS_URL` in `common/nutanaa.ts`.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 from uuid import uuid4
 
+import psutil
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -154,6 +156,34 @@ async def health() -> dict:
 		"plugins": context.health.plugins,
 		"agents": context.health.agents,
 		"workflows": context.health.workflows,
+	}
+
+
+@app.get("/system-metrics")
+async def system_metrics() -> dict:
+	"""Host system metrics collected via psutil — real CPU and memory
+	utilization for the machine this process is running on."""
+	cpu_freq = psutil.cpu_freq()
+	cpu_count = psutil.cpu_count(logical=True)
+	cpu_percent = psutil.cpu_percent(interval=0.1)
+	mem = psutil.virtual_memory()
+	return {
+		"cpu": {
+			"usage": cpu_percent,
+			"cores": cpu_count,
+			"frequency": cpu_freq.current if cpu_freq else 0,
+			"processes": len(psutil.pids()),
+		},
+		"memory": {
+			"used": mem.used,
+			"total": mem.total,
+			"available": mem.available,
+			"percentage": mem.percent,
+			"heapUsed": 0,
+			"heapTotal": 0,
+			"external": 0,
+		},
+		"timestamp": time.time(),
 	}
 
 

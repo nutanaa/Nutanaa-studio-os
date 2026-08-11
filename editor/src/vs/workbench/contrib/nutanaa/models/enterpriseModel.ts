@@ -57,17 +57,17 @@ export interface IUserSession {
 }
 
 export interface IUser {
-	readonly id: string;
-	readonly username: string;
-	readonly email: string;
-	readonly displayName: string;
-	readonly avatarUrl?: string;
-	readonly roles: string[];
-	readonly groups: string[];
-	readonly enabled: boolean;
-	readonly createdAt: number;
-	readonly lastLoginAt?: number;
-	readonly metadata?: Record<string, unknown>;
+	id: string;
+	username: string;
+	email: string;
+	displayName: string;
+	avatarUrl?: string;
+	roles: string[];
+	groups: string[];
+	enabled: boolean;
+	createdAt: number;
+	lastLoginAt?: number;
+	metadata?: Record<string, unknown>;
 }
 
 // ── Authorization Types ───────────────────────────────────────────────────────
@@ -277,32 +277,32 @@ export interface IInstallOptions {
 // ── Remote Runtime Types ──────────────────────────────────────────────────────
 
 export interface IRemoteAgent {
-	readonly id: string;
-	readonly name: string;
-	readonly endpoint: string;
-	readonly status: 'connected' | 'disconnected' | 'connecting' | 'error';
-	readonly capabilities: string[];
-	readonly lastHeartbeat: number;
-	readonly load: number;
-	readonly metadata?: Record<string, unknown>;
+	id: string;
+	name: string;
+	endpoint: string;
+	status: 'connected' | 'disconnected' | 'connecting' | 'error';
+	capabilities: string[];
+	lastHeartbeat: number;
+	load: number;
+	metadata?: Record<string, unknown>;
 }
 
 export interface INodeInfo {
-	readonly nodeId: string;
-	readonly role: 'master' | 'worker' | 'edge';
-	readonly address: string;
-	readonly status: 'online' | 'offline' | 'degraded';
-	readonly capabilities: string[];
-	readonly load: number;
-	readonly lastSeen: number;
-	readonly version: string;
+	nodeId: string;
+	role: 'master' | 'worker' | 'edge';
+	address: string;
+	status: 'online' | 'offline' | 'degraded';
+	capabilities: string[];
+	load: number;
+	lastSeen: number;
+	version: string;
 }
 
 export interface IClusterState {
-	readonly nodes: Map<string, INodeInfo>;
-	readonly masterNode: string | undefined;
-	readonly totalLoad: number;
-	readonly averageLoad: number;
+	nodes: Map<string, INodeInfo>;
+	masterNode: string | undefined;
+	totalLoad: number;
+	averageLoad: number;
 }
 
 // ── Audit Types ───────────────────────────────────────────────────────────────

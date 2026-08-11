@@ -122,62 +122,62 @@ export type WorkflowNodeType =
 	| 'end';
 
 export interface IWorkflowNode {
-	readonly id: string;
-	readonly type: WorkflowNodeType;
-	readonly label: string;
-	readonly description?: string;
-	readonly position: IWorkflowPosition;
-	readonly config: IWorkflowNodeConfig;
-	readonly status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
-	readonly executionTime?: number;
-	readonly error?: string;
+	id: string;
+	type: WorkflowNodeType;
+	label: string;
+	description?: string;
+	position: IWorkflowPosition;
+	config: IWorkflowNodeConfig;
+	status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+	executionTime?: number;
+	error?: string;
 }
 
 export interface IWorkflowPosition {
-	readonly x: number;
-	readonly y: number;
+	x: number;
+	y: number;
 }
 
 export interface IWorkflowNodeConfig {
-	readonly agentId?: string;
-	readonly toolId?: string;
-	readonly condition?: string;
-	readonly maxIterations?: number;
-	readonly retryCount?: number;
-	readonly retryDelay?: number;
-	readonly parallelNodes?: string[];
-	readonly subworkflowId?: string;
-	readonly inputMapping?: Record<string, string>;
-	readonly outputMapping?: Record<string, string>;
+	agentId?: string;
+	toolId?: string;
+	condition?: string;
+	maxIterations?: number;
+	retryCount?: number;
+	retryDelay?: number;
+	parallelNodes?: string[];
+	subworkflowId?: string;
+	inputMapping?: Record<string, string>;
+	outputMapping?: Record<string, string>;
 }
 
 export interface IWorkflowEdge {
-	readonly id: string;
-	readonly sourceId: string;
-	readonly targetId: string;
-	readonly label?: string;
-	readonly condition?: string;
-	readonly status: 'pending' | 'active' | 'completed' | 'failed';
+	id: string;
+	sourceId: string;
+	targetId: string;
+	label?: string;
+	condition?: string;
+	status: 'pending' | 'active' | 'completed' | 'failed';
 }
 
 export interface IWorkflowGraph {
-	readonly id: string;
-	readonly name: string;
-	readonly description?: string;
-	readonly nodes: IWorkflowNode[];
-	readonly edges: IWorkflowEdge[];
-	readonly status: 'created' | 'running' | 'completed' | 'failed' | 'cancelled';
-	readonly createdAt: number;
-	readonly startedAt?: number;
-	readonly completedAt?: number;
-	readonly version: number;
+	id: string;
+	name: string;
+	description?: string;
+	nodes: IWorkflowNode[];
+	edges: IWorkflowEdge[];
+	status: 'created' | 'running' | 'completed' | 'failed' | 'cancelled';
+	createdAt: number;
+	startedAt?: number;
+	completedAt?: number;
+	version: number;
 }
 
 export interface IWorkflowPaletteItem {
-	readonly type: WorkflowNodeType;
-	readonly label: string;
-	readonly icon: string;
-	readonly description: string;
+	type: WorkflowNodeType;
+	label: string;
+	icon: string;
+	description: string;
 }
 
 // ── Timeline Types ─────────────────────────────────────────────────────────────────

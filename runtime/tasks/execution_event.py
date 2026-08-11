@@ -39,6 +39,7 @@ class TaskExecutionEventType(str, Enum):
     COMPLETED = "task.execution.completed"
     FAILED = "task.execution.failed"
     CANCELLED = "task.execution.cancelled"
+    STREAM_CHUNK = "task.execution.stream_chunk"
 
 
 @dataclass(slots=True)

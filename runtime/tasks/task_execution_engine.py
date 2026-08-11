@@ -337,6 +337,27 @@ class TaskExecutionEngine:
             cache_key=request.metadata.get("cache_key"),
             cache_ttl_seconds=request.metadata.get("cache_ttl_seconds"),
         )
+
+        if provider_selection is not None:
+            provider = provider_selection.record.provider
+            if ProviderCapability.STREAM in provider.metadata.capabilities:
+                try:
+                    full_text = ""
+                    async for chunk in self.provider_manager.stream(
+                        prompt=provider_request.prompt,
+                        preferred=provider_selection.name,
+                        model=model_name,
+                    ):
+                        await self._emit_event(
+                            TaskExecutionEventType.STREAM_CHUNK,
+                            request,
+                            {"chunk": chunk},
+                        )
+                        full_text += chunk
+                    return full_text
+                except Exception:
+                    pass
+
         response = await self.provider_manager.execute(provider_request)
         if not response.success:
             raise TaskExecutionError(

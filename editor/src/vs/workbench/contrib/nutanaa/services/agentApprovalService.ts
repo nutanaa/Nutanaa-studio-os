@@ -5,7 +5,7 @@
 
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { AgentPermissionsManager } from '../common/agentPermissions.js';
+import { AgentPermissionsManager } from '../common/agents/agentPermissions.js';
 import { IAgentPermissionRequest } from '../models/agentModel.js';
 
 export const IAgentApprovalService = createDecorator<IAgentApprovalService>('agentApprovalService');

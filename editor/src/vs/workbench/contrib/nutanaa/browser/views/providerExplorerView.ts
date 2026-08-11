@@ -3,25 +3,23 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
-import { Emitter, Event } from '../../../../base/common/event.js';
-import { append, $, addStandardDisposableListener } from '../../../../base/browser/dom.js';
-import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
-import { ILogService } from '../../../../platform/log/common/log.js';
-import { IThemeService } from '../../../../platform/theme/common/themeService.js';
-import { IStorageService } from '../../../../platform/storage/common/storage.js';
-import { IHoverService } from '../../../../platform/hover/browser/hover.js';
-import { KeybindingService } from '../../../../platform/keybinding/browser/keybindingService.js';
-import { ViewPane, ViewPaneOptions } from '../../../browser/parts/views/viewPane.js';
-import { IRuntimeEventBus, RuntimeEventType } from '../../common/runtimeEventBus.js';
-import { IRuntimeStateService } from '../../common/runtimeState.js';
-import { IProviderExplorerEntry, IProviderModelInfo } from '../../models/studioModel.js';
-import { IProviderManager } from '../../common/providerManager.js';
-import { IModelRegistry } from '../../common/modelRegistry.js';
-import { localize } from '../../../../nls.js';
-import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { append, $, addStandardDisposableListener } from '../../../../../base/browser/dom.js';
+import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
+import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
+import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
+import { IViewDescriptorService } from '../../../../common/views.js';
+import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
+import { FilterViewPane, IFilterViewPaneOptions } from '../../../../browser/parts/views/viewPane.js';
+import { IRuntimeEventBus } from '../../common/runtime/runtimeEventBus.js';
+import { RuntimeEventType } from '../../common/runtime/runtimeEvents.js';
+import { IProviderExplorerEntry } from '../../models/studioModel.js';
+import { IProviderManager } from '../../common/providers/providerManager.js';
+import { localize } from '../../../../../nls.js';
+import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 
 /**
  * Provider Explorer View for Nutanaa Studio OS.
@@ -33,7 +31,7 @@ import { ICommandService } from '../../../../platform/commands/common/commands.j
  * - Available models list
  * - Provider switching
  */
-export class ProviderExplorerView extends ViewPane {
+export class ProviderExplorerView extends FilterViewPane {
 
 	private static readonly SELECTED_PROVIDER_KEY = 'nutanaa.selectedProvider';
 
@@ -45,33 +43,32 @@ export class ProviderExplorerView extends ViewPane {
 	private selectedProvider: string | undefined;
 	private showDisabled: boolean = false;
 
-	private readonly _register: DisposableStore;
-
 	constructor(
-		options: ViewPaneOptions,
-		@IInstantiationService instantiationService: IInstantiationService,
-		@IContextViewService contextViewService: IContextViewService,
-		@ILogService logService: ILogService,
-		@IThemeService themeService: IThemeService,
-		@IStorageService storageService: IStorageService,
-		@IHoverService hoverService: IHoverService,
-		@IKeybindingService keybindingService: KeybindingService,
-		@IRuntimeEventBus private readonly runtimeEventBus: IRuntimeEventBus,
-		@IRuntimeStateService private readonly runtimeStateService: IRuntimeStateService,
-		@IProviderManager private readonly providerManager: IProviderManager,
-		@IModelRegistry private readonly modelRegistry: IModelRegistry,
+		options: IFilterViewPaneOptions,
+		@IKeybindingService keybindingService: IKeybindingService,
+		@IContextMenuService contextMenuService: IContextMenuService,
 		@IConfigurationService configurationService: IConfigurationService,
-		@ICommandService private readonly commandService: ICommandService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
+		@IInstantiationService instantiationService: IInstantiationService,
+		@IOpenerService openerService: IOpenerService,
+		@IThemeService themeService: IThemeService,
+		@IHoverService hoverService: IHoverService,
+		@IStorageService private readonly storageService: IStorageService,
+		@IRuntimeEventBus private readonly runtimeEventBus: IRuntimeEventBus,
+		@IProviderManager private readonly providerManager: IProviderManager,
 	) {
-		super(options, instantiationService, contextViewService, configurationService, keybindingService, themeService, storageService, logService, hoverService);
-
-		this._register = new DisposableStore();
+		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
 		this.loadSelectedProvider();
 	}
 
 	protected override renderBody(container: HTMLElement): void {
+		super.renderBody(container);
 		this.container = container;
+	}
+
+	protected layoutBodyContent(height: number, width: number): void {
 		this.container.classList.add('nutanaa-provider-explorer');
 
 		this.renderToolbar();
@@ -86,23 +83,22 @@ export class ProviderExplorerView extends ViewPane {
 
 		const addButton = append(toolbar, $('button.toolbar-button', {}, '+'));
 		addButton.title = localize('addProvider', 'Add Provider');
-		this._register(addStandardDisposableListener(addButton, 'click', () => {
+		this._register(addStandardDisposableListener(addButton as HTMLElement, 'click', () => {
 			this.showAddProviderDialog();
 		}));
 
 		const refreshButton = append(toolbar, $('button.toolbar-button', {}, '↻'));
 		refreshButton.title = localize('refresh', 'Refresh');
-		this._register(addStandardDisposableListener(refreshButton, 'click', () => {
+		this._register(addStandardDisposableListener(refreshButton as HTMLElement, 'click', () => {
 			this.refreshProviders();
 		}));
 
-		const spacer = append(toolbar, $('div.toolbar-spacer'));
 
 		const showDisabledToggle = append(toolbar, $('label.toggle-label'));
 		const toggle = append(showDisabledToggle, $('input.toggle-input', { type: 'checkbox' }));
-		toggle.checked = this.showDisabled;
-		this._register(addStandardDisposableListener(toggle, 'change', () => {
-			this.showDisabled = toggle.checked;
+		(toggle as HTMLInputElement).checked = this.showDisabled;
+		this._register(addStandardDisposableListener(toggle as HTMLInputElement, 'change', () => {
+			this.showDisabled = (toggle as HTMLInputElement).checked;
 			this.renderProvidersList();
 		}));
 		append(showDisabledToggle, $('span.toggle-label', {}, localize('showDisabled', 'Show Disabled')));
@@ -143,14 +139,11 @@ export class ProviderExplorerView extends ViewPane {
 		const name = append(header, $('span.provider-name', {}, provider.name));
 		name.title = provider.name;
 
-		const type = append(header, $('span.provider-type', {}, provider.type));
 
 		// Latency
-		const latency = append(content, $('span.provider-latency', {}, `${provider.latency}ms`));
+		const latency = append(content, $('span.provider-latency', {}, `${provider.latencyMs}ms`));
 		latency.title = localize('latency', 'Latency');
 
-		// Model
-		const model = append(content, $('span.provider-model', {}, provider.model));
 
 		// Capabilities badges
 		const capabilities = append(element, $('.provider-capabilities'));
@@ -165,7 +158,7 @@ export class ProviderExplorerView extends ViewPane {
 			append(capabilities, $('span.capability-badge', {}, 'Vision'));
 		}
 
-		this._register(addStandardDisposableListener(element, 'click', () => {
+		this._register(addStandardDisposableListener(element as HTMLElement, 'click', () => {
 			this.selectProvider(provider.name);
 		}));
 
@@ -188,7 +181,6 @@ export class ProviderExplorerView extends ViewPane {
 		const name = append(header, $('h3.provider-name', {}, selected.name));
 		name.title = selected.name;
 
-		const type = append(header, $('span.provider-type-badge', {}, selected.type));
 
 		// Health status
 		const status = append(this.detailsContainer, $('.details-section'));
@@ -202,7 +194,7 @@ export class ProviderExplorerView extends ViewPane {
 
 		const latencyItem = append(healthGrid, $('.details-item'));
 		append(latencyItem, $('span.item-label', {}, localize('latency', 'Latency')));
-		append(latencyItem, $('span.item-value', {}, `${selected.latency}ms`));
+		append(latencyItem, $('span.item-value', {}, `${selected.latencyMs}ms`));
 
 		// Connection
 		const connection = append(this.detailsContainer, $('.details-section'));
@@ -259,23 +251,23 @@ export class ProviderExplorerView extends ViewPane {
 
 		if (!selected.isSelected) {
 			const selectButton = append(actions, $('button.action-button.primary', {}, localize('select', 'Select')));
-			this._register(addStandardDisposableListener(selectButton, 'click', () => {
+			this._register(addStandardDisposableListener(selectButton as HTMLElement, 'click', () => {
 				this.selectProvider(selected.name);
 			}));
 		}
 
 		const toggleButton = append(actions, $('button.action-button', {}, selected.isEnabled ? localize('disable', 'Disable') : localize('enable', 'Enable')));
-		this._register(addStandardDisposableListener(toggleButton, 'click', () => {
+		this._register(addStandardDisposableListener(toggleButton as HTMLElement, 'click', () => {
 			this.toggleProvider(selected.name);
 		}));
 
 		const editButton = append(actions, $('button.action-button', {}, localize('edit', 'Edit')));
-		this._register(addStandardDisposableListener(editButton, 'click', () => {
+		this._register(addStandardDisposableListener(editButton as HTMLElement, 'click', () => {
 			this.editProvider(selected.name);
 		}));
 
 		const deleteButton = append(actions, $('button.action-button.danger', {}, localize('delete', 'Delete')));
-		this._register(addStandardDisposableListener(deleteButton, 'click', () => {
+		this._register(addStandardDisposableListener(deleteButton as HTMLElement, 'click', () => {
 			this.deleteProvider(selected.name);
 		}));
 	}
@@ -308,7 +300,7 @@ export class ProviderExplorerView extends ViewPane {
 	}
 
 	private loadSelectedProvider(): void {
-		const stored = this.storageService.get(ProviderExplorerView.SELECTED_PROVIDER_KEY, 0);
+		const stored = this.storageService.get(ProviderExplorerView.SELECTED_PROVIDER_KEY, StorageScope.APPLICATION);
 		if (stored) {
 			this.selectedProvider = stored;
 		}
@@ -318,7 +310,7 @@ export class ProviderExplorerView extends ViewPane {
 		const success = this.providerManager.selectProviderByName(providerName);
 		if (success) {
 			this.selectedProvider = providerName;
-			this.storageService.store(ProviderExplorerView.SELECTED_PROVIDER_KEY, providerName, 0);
+			this.storageService.store(ProviderExplorerView.SELECTED_PROVIDER_KEY, providerName, StorageScope.APPLICATION, StorageTarget.USER);
 
 			this.loadProviders();
 			this.runtimeEventBus.fire({
@@ -362,9 +354,6 @@ export class ProviderExplorerView extends ViewPane {
 	}
 
 	public override dispose(): void {
-		this._register.dispose();
 		super.dispose();
 	}
 }
-
-import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';

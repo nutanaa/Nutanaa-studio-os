@@ -3,24 +3,21 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
-import { Emitter, Event } from '../../../../base/common/event.js';
-import { append, $, addStandardDisposableListener } from '../../../../base/browser/dom.js';
-import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
-import { ILogService } from '../../../../platform/log/common/log.js';
-import { IThemeService } from '../../../../platform/theme/common/themeService.js';
-import { IStorageService } from '../../../../platform/storage/common/storage.js';
-import { IHoverService } from '../../../../platform/hover/browser/hover.js';
-import { KeybindingService } from '../../../../platform/keybinding/browser/keybindingService.js';
-import { ViewPane, ViewPaneOptions } from '../../../browser/parts/views/viewPane.js';
-import { IRuntimeEventBus, RuntimeEventType } from '../../common/runtimeEventBus.js';
-import { IRuntimeStateService } from '../../common/runtimeState.js';
+import { append, $, clearNode, addStandardDisposableListener } from '../../../../../base/browser/dom.js';
+import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
+import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
+import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
+import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
+import { IViewDescriptorService } from '../../../../common/views.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
+import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
+import { FilterViewPane, IFilterViewPaneOptions } from '../../../../browser/parts/views/viewPane.js';
 import { IToolExplorerEntry, IToolExplorerFilter } from '../../models/studioModel.js';
-import { IToolManager, ToolPermission } from '../../common/toolManager.js';
-import { localize } from '../../../../nls.js';
-import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { IToolManager } from '../../common/tools/toolManager.js';
+import { localize } from '../../../../../nls.js';
+import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 
 /**
  * Tool Explorer View for Nutanaa Studio OS.
@@ -32,10 +29,10 @@ import { ICommandService } from '../../../../platform/commands/common/commands.j
  * - Tool metrics
  * - Enable/disable tools
  */
-export class ToolExplorerView extends ViewPane {
+export class ToolExplorerView extends FilterViewPane {
 
 	private container!: HTMLElement;
-	private filterContainer!: HTMLElement;
+	private toolFilterContainer!: HTMLElement;
 	private searchContainer!: HTMLElement;
 	private listContainer!: HTMLElement;
 
@@ -43,30 +40,28 @@ export class ToolExplorerView extends ViewPane {
 	private filter: IToolExplorerFilter = {};
 	private searchQuery: string = '';
 
-	private readonly _register: DisposableStore;
-
 	constructor(
-		options: ViewPaneOptions,
-		@IInstantiationService instantiationService: IInstantiationService,
-		@IContextViewService contextViewService: IContextViewService,
-		@ILogService logService: ILogService,
-		@IThemeService themeService: IThemeService,
-		@IStorageService storageService: IStorageService,
-		@IHoverService hoverService: IHoverService,
-		@IKeybindingService keybindingService: KeybindingService,
-		@IRuntimeEventBus private readonly runtimeEventBus: IRuntimeEventBus,
-		@IRuntimeStateService private readonly runtimeStateService: IRuntimeStateService,
-		@IToolManager private readonly toolManager: IToolManager,
+		options: IFilterViewPaneOptions,
+		@IKeybindingService keybindingService: IKeybindingService,
+		@IContextMenuService contextMenuService: IContextMenuService,
 		@IConfigurationService configurationService: IConfigurationService,
-		@ICommandService private readonly commandService: ICommandService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
+		@IInstantiationService instantiationService: IInstantiationService,
+		@IOpenerService openerService: IOpenerService,
+		@IThemeService themeService: IThemeService,
+		@IHoverService hoverService: IHoverService,
+		@IToolManager private readonly toolManager: IToolManager,
+		@ILogService logService: ILogService,
 	) {
-		super(options, instantiationService, contextViewService, configurationService, keybindingService, themeService, storageService, logService, hoverService);
-
-		this._register = new DisposableStore();
+		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 	}
 
 	protected override renderBody(container: HTMLElement): void {
 		this.container = container;
+	}
+
+	protected layoutBodyContent(height: number, width: number): void {
 		this.container.classList.add('nutanaa-tool-explorer');
 
 		this.renderFilterBar();
@@ -77,7 +72,7 @@ export class ToolExplorerView extends ViewPane {
 	}
 
 	private renderFilterBar(): void {
-		this.filterContainer = append(this.container, $('.tool-filter'));
+		this.toolFilterContainer = append(this.container, $('.tool-filter'));
 
 		const categories = [
 			{ category: 'File Operations', icon: '📁' },
@@ -91,29 +86,28 @@ export class ToolExplorerView extends ViewPane {
 		];
 
 		for (const cat of categories) {
-			const button = append(this.filterContainer, $(`.filter-toggle${this.isCategoryFiltered(cat.category) ? ' active' : ''}`));
+			const button = append(this.toolFilterContainer, $(`.filter-toggle${this.isCategoryFiltered(cat.category) ? ' active' : ''}`));
 			button.title = cat.category;
-			button.innerHTML = cat.icon;
-			button.dataset.category = cat.category;
+			button.textContent = cat.icon;
+			(button as HTMLElement).dataset.category = cat.category;
 
-			this._register(addStandardDisposableListener(button, 'click', () => {
+			this._register(addStandardDisposableListener(button as HTMLElement, 'click', () => {
 				this.toggleCategoryFilter(cat.category);
 			}));
 		}
 
-		const spacer = append(this.filterContainer, $('div.filter-spacer'));
 
-		const enabledToggle = append(this.filterContainer, $('label.toggle-label'));
+		const enabledToggle = append(this.toolFilterContainer, $('label.toggle-label'));
 		const toggle = append(enabledToggle, $('input.toggle-input', { type: 'checkbox', checked: this.filter.enabledOnly }));
-		this._register(addStandardDisposableListener(toggle, 'change', () => {
-			this.filter.enabledOnly = toggle.checked;
+		this._register(addStandardDisposableListener(toggle as HTMLElement, 'change', () => {
+			this.filter = { ...this.filter, enabledOnly: (toggle as HTMLInputElement).checked };
 			this.filterTools();
 		}));
 		append(enabledToggle, $('span.toggle-label', {}, localize('enabledOnly', 'Enabled Only')));
 
-		const refreshButton = append(this.filterContainer, $('button.refresh-button', {}, '↻'));
+		const refreshButton = append(this.toolFilterContainer, $('button.refresh-button', {}, '⟳'));
 		refreshButton.title = localize('refresh', 'Refresh');
-		this._register(addStandardDisposableListener(refreshButton, 'click', () => {
+		this._register(addStandardDisposableListener(refreshButton as HTMLElement, 'click', () => {
 			this.loadTools();
 		}));
 	}
@@ -124,8 +118,8 @@ export class ToolExplorerView extends ViewPane {
 		const searchInput = append(this.searchContainer, $('input.search-input', {
 			placeholder: localize('searchTools', 'Search tools...'),
 		}));
-		this._register(addStandardDisposableListener(searchInput, 'input', () => {
-			this.searchQuery = searchInput.value;
+		this._register(addStandardDisposableListener(searchInput as HTMLElement, 'input', () => {
+			this.searchQuery = (searchInput as HTMLInputElement).value;
 			this.filterTools();
 		}));
 	}
@@ -140,7 +134,7 @@ export class ToolExplorerView extends ViewPane {
 		const filtered = this.getFilteredTools();
 
 		if (filtered.length === 0) {
-			this.listContainer.innerHTML = '';
+			clearNode(this.listContainer);
 			append(this.listContainer, $('div.empty-state', {}, localize('noTools', 'No tools to display')));
 			return;
 		}
@@ -152,7 +146,7 @@ export class ToolExplorerView extends ViewPane {
 			fragment.appendChild(toolElement);
 		}
 
-		this.listContainer.innerHTML = '';
+		clearNode(this.listContainer);
 		this.listContainer.appendChild(fragment);
 	}
 
@@ -173,7 +167,6 @@ export class ToolExplorerView extends ViewPane {
 		const name = append(header, $('span.tool-name', {}, tool.name));
 		name.title = tool.name;
 
-		const version = append(header, $('span.tool-version', {}, `v${tool.version}`));
 
 		// Description
 		const description = append(content, $('span.tool-description', {}, tool.description));
@@ -186,26 +179,17 @@ export class ToolExplorerView extends ViewPane {
 			permBadge.title = this.getPermissionDescription(perm);
 		}
 
-		// Metrics
-		const metrics = append(element, $('.tool-metrics'));
-
-		const executions = append(metrics, $('span.tool-metric', {}, `${tool.executionCount} runs`));
-
-		const success = append(metrics, $('span.tool-metric', {}, `${tool.successRate.toFixed(0)}%`));
-
-		const time = append(metrics, $('span.tool-metric', {}, `${tool.averageExecutionTime.toFixed(0)}ms avg`));
-
 		// Actions
 		const actions = append(element, $('.tool-actions'));
 
-		const toggleButton = append(actions, $('button.action-button${tool.isEnabled ? '' : ' disabled'}', {}, tool.isEnabled ? 'Disable' : 'Enable'));
-		this._register(addStandardDisposableListener(toggleButton, 'click', () => {
+		const toggleButton = append(actions, $('button.action-button' + (tool.isEnabled ? '' : ' disabled'), {}, tool.isEnabled ? 'Disable' : 'Enable'));
+		this._register(addStandardDisposableListener(toggleButton as HTMLElement, 'click', () => {
 			this.toggleTool(tool.id);
 		}));
 
 		const executeButton = append(actions, $('button.action-button', {}, '▶'));
 		executeButton.title = localize('execute', 'Execute');
-		this._register(addStandardDisposableListener(executeButton, 'click', () => {
+		this._register(addStandardDisposableListener(executeButton as HTMLElement, 'click', () => {
 			this.executeTool(tool.id);
 		}));
 
@@ -253,15 +237,12 @@ export class ToolExplorerView extends ViewPane {
 	}
 
 	private toggleCategoryFilter(category: string): void {
-		if (!this.filter.categories) {
-			this.filter.categories = [];
-		}
-
-		const index = this.filter.categories.indexOf(category);
+		const currentCategories = this.filter.categories || [];
+		const index = currentCategories.indexOf(category);
 		if (index >= 0) {
-			this.filter.categories.splice(index, 1);
+			this.filter = { ...this.filter, categories: currentCategories.filter(c => c !== category) };
 		} else {
-			this.filter.categories.push(category);
+			this.filter = { ...this.filter, categories: [...currentCategories, category] };
 		}
 
 		this.updateFilterButtons();
@@ -269,10 +250,10 @@ export class ToolExplorerView extends ViewPane {
 	}
 
 	private updateFilterButtons(): void {
-		const buttons = this.filterContainer.querySelectorAll('.filter-toggle');
+		const buttons = this.toolFilterContainer.querySelectorAll('.filter-toggle');
 		buttons.forEach(btn => {
-			const category = btn.dataset.category;
-			btn.classList.toggle('active', this.isCategoryFiltered(category));
+			const category = (btn as HTMLElement).dataset.category || '';
+			(btn as HTMLElement).classList.toggle('active', this.isCategoryFiltered(category));
 		});
 	}
 
@@ -290,8 +271,8 @@ export class ToolExplorerView extends ViewPane {
 		return icons[category] || '🔧';
 	}
 
-	private getPermissionDescription(permission: ToolPermission): string {
-		const descriptions: Record<ToolPermission, string> = {
+	private getPermissionDescription(permission: string): string {
+		const descriptions: Record<string, string> = {
 			read: 'Can read files and data',
 			write: 'Can create and modify files',
 			execute: 'Can run commands',
@@ -321,10 +302,12 @@ export class ToolExplorerView extends ViewPane {
 	}
 
 	private toggleTool(toolId: string): void {
-		const tool = this.tools.find(t => t.id === toolId);
-		if (tool) {
-			this.toolManager.setToolEnabled(toolId, !tool.isEnabled);
-			tool.isEnabled = !tool.isEnabled;
+		const toolIndex = this.tools.findIndex(t => t.id === toolId);
+		if (toolIndex >= 0) {
+			const tool = this.tools[toolIndex];
+			const updatedTool = { ...tool, isEnabled: !tool.isEnabled };
+			this.toolManager.setToolEnabled(toolId, updatedTool.isEnabled);
+			this.tools[toolIndex] = updatedTool;
 			this.renderTools();
 		}
 	}
@@ -338,9 +321,6 @@ export class ToolExplorerView extends ViewPane {
 	}
 
 	public override dispose(): void {
-		this._register.dispose();
 		super.dispose();
 	}
 }
-
-import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';

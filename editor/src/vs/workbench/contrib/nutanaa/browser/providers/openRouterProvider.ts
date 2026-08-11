@@ -19,6 +19,7 @@ interface ILLMProvider {
 
 export class OpenRouterProvider implements ILLMProvider {
 	readonly config: IProviderConfig;
+	readonly provider: unknown = this;
 	private connected = false;
 
 	constructor(config: IProviderConfig) {
@@ -195,3 +196,5 @@ export class OpenRouterProvider implements ILLMProvider {
 		return data.choices?.[0]?.message?.content ?? '';
 	}
 }
+
+

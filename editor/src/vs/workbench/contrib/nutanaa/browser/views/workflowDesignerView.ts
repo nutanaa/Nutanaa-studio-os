@@ -3,24 +3,24 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
-import { Emitter, Event } from '../../../../base/common/event.js';
-import { append, $, addStandardDisposableListener } from '../../../../base/browser/dom.js';
-import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
-import { ILogService } from '../../../../platform/log/common/log.js';
-import { IThemeService } from '../../../../platform/theme/common/themeService.js';
-import { IStorageService } from '../../../../platform/storage/common/storage.js';
-import { IHoverService } from '../../../../platform/hover/browser/hover.js';
-import { KeybindingService } from '../../../../platform/keybinding/browser/keybindingService.js';
-import { ViewPane, ViewPaneOptions } from '../../../browser/parts/views/viewPane.js';
-import { IRuntimeEventBus, RuntimeEventType } from '../../common/runtimeEventBus.js';
-import { IRuntimeStateService } from '../../common/runtimeState.js';
+import { append, $, clearNode, addStandardDisposableListener } from '../../../../../base/browser/dom.js';
+import { Emitter } from '../../../../../base/common/event.js';
+import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
+import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
+import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
+import { IViewDescriptorService } from '../../../../common/views.js';
+import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
+import { FilterViewPane, IFilterViewPaneOptions } from '../../../../browser/parts/views/viewPane.js';
 import { IWorkflowGraph, IWorkflowNode, IWorkflowEdge, WorkflowNodeType, IWorkflowPaletteItem } from '../../models/studioModel.js';
-import { IWorkflowEngine } from '../../common/workflowEngine.js';
-import { localize } from '../../../../nls.js';
-import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { IWorkflowEngine } from '../../common/workflow/workflowEngine.js';
+import { IWorkflowExecutionRequest } from '../../models/executionModel.js';
+import { localize } from '../../../../../nls.js';
+import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 
 /**
  * Workflow Designer View for Nutanaa Studio OS.
@@ -32,12 +32,11 @@ import { ICommandService } from '../../../../platform/commands/common/commands.j
  * - Validation and save/load
  * - Workflow execution and visualization
  */
-export class WorkflowDesignerView extends ViewPane {
+export class WorkflowDesignerView extends FilterViewPane {
 
 	private static readonly WORKFLOWS_STORE_KEY = 'nutanaa.workflows';
 
-	private readonly _onDidChange = this._register(new Emitter<void>());
-	public readonly onDidChange = this._onDidChange.event;
+	private readonly _onDidChangeView = this._register(new Emitter<void>());
 
 	private container!: HTMLElement;
 	private toolbarContainer!: HTMLElement;
@@ -53,7 +52,6 @@ export class WorkflowDesignerView extends ViewPane {
 	private zoom: number = 1;
 	private isDragging: boolean = false;
 	private dragOffset: { x: number; y: number } = { x: 0, y: 0 };
-	private draggedItem: { type: 'node' | 'edge'; id: string } | undefined;
 
 	private readonly paletteItems: IWorkflowPaletteItem[] = [
 		{ type: 'sequential', label: 'Sequential', icon: '→', description: 'Execute nodes one after another' },
@@ -67,32 +65,31 @@ export class WorkflowDesignerView extends ViewPane {
 		{ type: 'end', label: 'End', icon: '⏹', description: 'Workflow end' },
 	];
 
-	private readonly _register: DisposableStore;
-
 	constructor(
-		options: ViewPaneOptions,
-		@IInstantiationService instantiationService: IInstantiationService,
-		@IContextViewService contextViewService: IContextViewViewService,
-		@ILogService logService: ILogService,
-		@IThemeService themeService: IThemeService,
-		@IStorageService storageService: IStorageService,
-		@IHoverService hoverService: IHoverService,
-		@IKeybindingService keybindingService: KeybindingService,
-		@IRuntimeEventBus private readonly runtimeEventBus: IRuntimeEventBus,
-		@IRuntimeStateService private readonly runtimeStateService: IRuntimeStateService,
-		@IWorkflowEngine private readonly workflowEngine: IWorkflowEngine,
+		options: IFilterViewPaneOptions,
+		@IKeybindingService keybindingService: IKeybindingService,
+		@IContextMenuService contextMenuService: IContextMenuService,
 		@IConfigurationService configurationService: IConfigurationService,
-		@ICommandService private readonly commandService: ICommandService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
+		@IInstantiationService instantiationService: IInstantiationService,
+		@IOpenerService openerService: IOpenerService,
+		@IThemeService themeService: IThemeService,
+		@IHoverService hoverService: IHoverService,
+		@ILogService protected readonly logService: ILogService,
+		@IStorageService protected readonly storageService: IStorageService,
+		@IWorkflowEngine private readonly workflowEngine: IWorkflowEngine,
 	) {
-		super(options, instantiationService, contextViewService, configurationService, keybindingService, themeService, storageService, logService, hoverService);
-
-		this._register = new DisposableStore();
+		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
 		this.loadWorkflows();
 	}
 
 	protected override renderBody(container: HTMLElement): void {
 		this.container = container;
+	}
+
+	protected layoutBodyContent(height: number, width: number): void {
 		this.container.classList.add('nutanaa-workflow-designer');
 
 		this.renderToolbar();
@@ -107,46 +104,46 @@ export class WorkflowDesignerView extends ViewPane {
 		this.toolbarContainer = append(this.container, $('.workflow-toolbar'));
 
 		// Workflow selector
-		const selector = append(this.toolbarContainer, $('select.workflow-selector'));
-		this._register(addStandardDisposableListener(selector, 'change', () => {
+		const selector = append(this.toolbarContainer, $('select.workflow-selector') as HTMLSelectElement);
+		this._register(addStandardDisposableListener(selector as HTMLElement, 'change', () => {
 			const workflowId = selector.value;
 			this.loadWorkflow(workflowId);
 		}));
 
 		// New workflow button
 		const newButton = append(this.toolbarContainer, $('button.toolbar-button', {}, localize('newWorkflow', 'New')));
-		this._register(addStandardDisposableListener(newButton, 'click', () => {
+		this._register(addStandardDisposableListener(newButton as HTMLElement, 'click', () => {
 			this.createNewWorkflow();
 		}));
 
 		// Save button
 		const saveButton = append(this.toolbarContainer, $('button.toolbar-button', {}, localize('save', 'Save')));
-		this._register(addStandardDisposableListener(saveButton, 'click', () => {
+		this._register(addStandardDisposableListener(saveButton as HTMLElement, 'click', () => {
 			this.saveCurrentWorkflow();
 		}));
 
 		// Execute button
 		const executeButton = append(this.toolbarContainer, $('button.toolbar-button.execute', {}, localize('execute', 'Execute')));
-		this._register(addStandardDisposableListener(executeButton, 'click', () => {
+		this._register(addStandardDisposableListener(executeButton as HTMLElement, 'click', () => {
 			this.executeCurrentWorkflow();
 		}));
 
 		// Zoom controls
 		const zoomOut = append(this.toolbarContainer, $('button.toolbar-button', {}, '−'));
-		this._register(addStandardDisposableListener(zoomOut, 'click', () => {
+		this._register(addStandardDisposableListener(zoomOut as HTMLElement, 'click', () => {
 			this.setZoom(this.zoom - 0.1);
 		}));
 
-		const zoomLevel = append(this.toolbarContainer, $('span.zoom-level', {}, `${Math.round(this.zoom * 100)}%`));
+		append(this.toolbarContainer, $('span.zoom-level', {}, `${Math.round(this.zoom * 100)}%`));
 
 		const zoomIn = append(this.toolbarContainer, $('button.toolbar-button', {}, '+'));
-		this._register(addStandardDisposableListener(zoomIn, 'click', () => {
+		this._register(addStandardDisposableListener(zoomIn as HTMLElement, 'click', () => {
 			this.setZoom(this.zoom + 0.1);
 		}));
 
 		// Delete button
 		const deleteButton = append(this.toolbarContainer, $('button.toolbar-button.delete', {}, localize('delete', 'Delete')));
-		this._register(addStandardDisposableListener(deleteButton, 'click', () => {
+		this._register(addStandardDisposableListener(deleteButton as HTMLElement, 'click', () => {
 			this.deleteCurrentWorkflow();
 		}));
 	}
@@ -158,31 +155,31 @@ export class WorkflowDesignerView extends ViewPane {
 		for (const item of this.paletteItems) {
 			const paletteItem = append(this.paletteContainer, $(`.palette-item`, { draggable: 'true' }));
 			paletteItem.title = item.description;
-			paletteItem.innerHTML = `${item.icon} ${item.label}`;
-			paletteItem.dataset.type = item.type;
+			paletteItem.textContent = `${item.icon} ${item.label}`;
+			(paletteItem as HTMLElement).dataset.type = item.type;
 
-			this._register(addStandardDisposableListener(paletteItem, 'dragstart', (e) => {
-				e.dataTransfer?.setData('nodeType', item.type);
+			this._register(addStandardDisposableListener(paletteItem as HTMLElement, 'dragstart', (e) => {
+				const dragEvent = e as DragEvent;
+				dragEvent.dataTransfer?.setData('nodeType', item.type);
 			}));
 		}
 	}
 
 	private renderCanvas(): void {
-		const canvasWrapper = append(this.container, $('.canvas-wrapper'));
-
-		this.canvasContainer = append(canvasWrapper, $('.workflow-canvas'));
+		this.canvasContainer = append(this.container, $('.workflow-canvas'));
 		this.canvasContainer.style.transform = `scale(${this.zoom})`;
 
-		this._register(addStandardDisposableListener(this.canvasContainer, 'dragover', (e) => {
+		this._register(addStandardDisposableListener(this.canvasContainer as HTMLElement, 'dragover', (e) => {
 			e.preventDefault();
 		}));
 
-		this._register(addStandardDisposableListener(this.canvasContainer, 'drop', (e) => {
+		this._register(addStandardDisposableListener(this.canvasContainer as HTMLElement, 'drop', (e) => {
 			this.handleCanvasDrop(e);
 		}));
 
-		this._register(addStandardDisposableListener(this.canvasContainer, 'click', (e) => {
-			if (e.target === this.canvasContainer) {
+		this._register(addStandardDisposableListener(this.canvasContainer as HTMLElement, 'click', (e) => {
+			const target = e.target as HTMLElement;
+			if (target === this.canvasContainer) {
 				this.clearSelection();
 			}
 		}));
@@ -196,7 +193,9 @@ export class WorkflowDesignerView extends ViewPane {
 	}
 
 	private updatePropertiesPanel(): void {
-		this.propertiesContainer.innerHTML = '';
+		if (!this.propertiesContainer) return;
+
+		clearNode(this.propertiesContainer);
 		append(this.propertiesContainer, $('h3.properties-title', {}, localize('properties', 'Properties')));
 
 		if (this.selectedNode) {
@@ -211,11 +210,13 @@ export class WorkflowDesignerView extends ViewPane {
 	}
 
 	private renderNodeProperties(node: IWorkflowNode): void {
+		if (!this.propertiesContainer) return;
+
 		// Node name
 		const nameGroup = append(this.propertiesContainer, $('.property-group'));
 		append(nameGroup, $('label', {}, localize('name', 'Name')));
-		const nameInput = append(nameGroup, $('input.property-input', { value: node.label }));
-		this._register(addStandardDisposableListener(nameInput, 'change', () => {
+		const nameInput = append(nameGroup, $('input.property-input', { value: node.label })) as HTMLInputElement;
+		this._register(addStandardDisposableListener(nameInput as HTMLElement, 'change', () => {
 			this.updateNodeLabel(node.id, nameInput.value);
 		}));
 
@@ -234,8 +235,8 @@ export class WorkflowDesignerView extends ViewPane {
 			const configGroup = append(this.propertiesContainer, $('.property-group'));
 			const id = node.type === 'agent' ? 'agentId' : 'toolId';
 			append(configGroup, $('label', {}, localize('id', 'ID')));
-			const idInput = append(configGroup, $('input.property-input', { value: node.config[id] || '' }));
-			this._register(addStandardDisposableListener(idInput, 'change', () => {
+			const idInput = append(configGroup, $('input.property-input', { value: (node.config as Record<string, unknown>)[id] || '' })) as HTMLInputElement;
+			this._register(addStandardDisposableListener(idInput as HTMLElement, 'change', () => {
 				this.updateNodeConfig(node.id, id, idInput.value);
 			}));
 		}
@@ -244,20 +245,22 @@ export class WorkflowDesignerView extends ViewPane {
 			const configGroup = append(this.propertiesContainer, $('.property-group'));
 			const maxKey = node.type === 'loop' ? 'maxIterations' : 'retryCount';
 			append(configGroup, $('label', {}, localize('maxCount', 'Max')));
-			const maxInput = append(configGroup, $('input.property-input', { type: 'number', value: String(node.config[maxKey] || 10) }));
-			this._register(addStandardDisposableListener(maxInput, 'change', () => {
-				this.updateNodeConfig(node.id, maxKey, parseInt(maxInput.value)));
+			const maxInput = append(configGroup, $('input.property-input', { type: 'number', value: String((node.config as Record<string, unknown>)[maxKey] || 10) })) as HTMLInputElement;
+			this._register(addStandardDisposableListener(maxInput as HTMLElement, 'change', () => {
+				this.updateNodeConfig(node.id, maxKey, parseInt(maxInput.value, 10));
 			}));
 		}
 
 		// Delete button
 		const deleteButton = append(this.propertiesContainer, $('button.delete-node-button', {}, localize('deleteNode', 'Delete Node')));
-		this._register(addStandardDisposableListener(deleteButton, 'click', () => {
+		this._register(addStandardDisposableListener(deleteButton as HTMLElement, 'click', () => {
 			this.deleteNode(node.id);
 		}));
 	}
 
 	private renderEdgeProperties(edge: IWorkflowEdge): void {
+		if (!this.propertiesContainer) return;
+
 		const sourceGroup = append(this.propertiesContainer, $('.property-group'));
 		append(sourceGroup, $('label', {}, localize('source', 'Source')));
 		append(sourceGroup, $('span.property-value', {}, edge.sourceId));
@@ -268,24 +271,26 @@ export class WorkflowDesignerView extends ViewPane {
 
 		const conditionGroup = append(this.propertiesContainer, $('.property-group'));
 		append(conditionGroup, $('label', {}, localize('condition', 'Condition')));
-		const conditionInput = append(conditionGroup, $('input.property-input', { value: edge.condition || '' }));
-		this._register(addStandardDisposableListener(conditionInput, 'change', () => {
+		const conditionInput = append(conditionGroup, $('input.property-input', { value: edge.condition || '' })) as HTMLInputElement;
+		this._register(addStandardDisposableListener(conditionInput as HTMLElement, 'change', () => {
 			this.updateEdgeCondition(edge.id, conditionInput.value);
 		}));
 	}
 
 	private renderWorkflowProperties(workflow: IWorkflowGraph): void {
+		if (!this.propertiesContainer) return;
+
 		const nameGroup = append(this.propertiesContainer, $('.property-group'));
 		append(nameGroup, $('label', {}, localize('name', 'Name')));
-		const nameInput = append(nameGroup, $('input.property-input', { value: workflow.name }));
-		this._register(addStandardDisposableListener(nameInput, 'change', () => {
+		const nameInput = append(nameGroup, $('input.property-input', { value: workflow.name })) as HTMLInputElement;
+		this._register(addStandardDisposableListener(nameInput as HTMLElement, 'change', () => {
 			this.updateWorkflowName(workflow.id, nameInput.value);
 		}));
 
 		const descGroup = append(this.propertiesContainer, $('.property-group'));
 		append(descGroup, $('label', {}, localize('description', 'Description')));
-		const descInput = append(descGroup, $('textarea.property-textarea', {}, workflow.description || ''));
-		this._register(addStandardDisposableListener(descInput, 'change', () => {
+		const descInput = append(descGroup, $('textarea.property-textarea', {}, workflow.description || '')) as HTMLTextAreaElement;
+		this._register(addStandardDisposableListener(descInput as HTMLElement, 'change', () => {
 			this.updateWorkflowDescription(workflow.id, descInput.value);
 		}));
 
@@ -303,7 +308,9 @@ export class WorkflowDesignerView extends ViewPane {
 	}
 
 	private setupCanvasEventListeners(): void {
-		this._register(addStandardDisposableListener(this.canvasContainer, 'mousedown', (e) => {
+		if (!this.canvasContainer) return;
+
+		this._register(addStandardDisposableListener(this.canvasContainer as HTMLElement, 'mousedown', (e) => {
 			const target = e.target as HTMLElement;
 			if (target.classList.contains('workflow-node')) {
 				const nodeId = target.dataset.nodeId;
@@ -313,45 +320,45 @@ export class WorkflowDesignerView extends ViewPane {
 					this.isDragging = true;
 					const rect = target.getBoundingClientRect();
 					this.dragOffset = {
-						x: e.clientX - rect.left,
-						y: e.clientY - rect.top,
+						x: (e as unknown as MouseEvent).clientX - rect.left,
+						y: (e as unknown as MouseEvent).clientY - rect.top,
 					};
 				}
 			} else if (target.classList.contains('workflow-edge')) {
 				const edgeId = target.dataset.edgeId;
-				const edge = this.currentWorkflow?.edges.find(e => e.id === edgeId);
+				const edge = this.currentWorkflow?.edges.find(ed => ed.id === edgeId);
 				if (edge) {
 					this.selectEdge(edge);
 				}
 			}
 		}));
 
-		this._register(addStandardDisposableListener(this.canvasContainer, 'mousemove', (e) => {
-			if (this.isDragging && this.selectedNode) {
+		this._register(addStandardDisposableListener(this.canvasContainer as HTMLElement, 'mousemove', (e) => {
+			if (this.isDragging && this.selectedNode && this.canvasContainer) {
 				const canvasRect = this.canvasContainer.getBoundingClientRect();
-				const newX = (e.clientX - canvasRect.left - this.dragOffset.x) / this.zoom;
-				const newY = (e.clientY - canvasRect.top - this.dragOffset.y) / this.zoom;
+				const newX = ((e as unknown as MouseEvent).clientX - canvasRect.left - this.dragOffset.x) / this.zoom;
+				const newY = ((e as unknown as MouseEvent).clientY - canvasRect.top - this.dragOffset.y) / this.zoom;
 				this.moveNode(this.selectedNode.id, newX, newY);
 			}
 		}));
 
-		this._register(addStandardDisposableListener(this.canvasContainer, 'mouseup', () => {
+		this._register(addStandardDisposableListener(this.canvasContainer as HTMLElement, 'mouseup', () => {
 			this.isDragging = false;
 		}));
 
 		// Double-click to create node
-		this._register(addStandardDisposableListener(this.canvasContainer, 'dblclick', (e) => {
+		this._register(addStandardDisposableListener(this.canvasContainer as HTMLElement, 'dblclick', (e) => {
 			const target = e.target as HTMLElement;
-			if (target === this.canvasContainer) {
+			if (target === this.canvasContainer && this.canvasContainer) {
 				const canvasRect = this.canvasContainer.getBoundingClientRect();
-				const x = (e.clientX - canvasRect.left) / this.zoom;
-				const y = (e.clientY - canvasRect.top) / this.zoom;
+				const x = ((e as unknown as MouseEvent).clientX - canvasRect.left) / this.zoom;
+				const y = ((e as unknown as MouseEvent).clientY - canvasRect.top) / this.zoom;
 				this.addNode('sequential', x, y);
 			}
 		}));
 
 		// Right-click context menu
-		this._register(addStandardDisposableListener(this.canvasContainer, 'contextmenu', (e) => {
+		this._register(addStandardDisposableListener(this.canvasContainer as HTMLElement, 'contextmenu', (e) => {
 			e.preventDefault();
 			// TODO: Show context menu
 		}));
@@ -360,7 +367,7 @@ export class WorkflowDesignerView extends ViewPane {
 	private handleCanvasDrop(e: DragEvent): void {
 		e.preventDefault();
 		const nodeType = e.dataTransfer?.getData('nodeType');
-		if (!nodeType || !this.currentWorkflow) {
+		if (!nodeType || !this.currentWorkflow || !this.canvasContainer) {
 			return;
 		}
 
@@ -372,7 +379,7 @@ export class WorkflowDesignerView extends ViewPane {
 	}
 
 	private loadWorkflows(): void {
-		const stored = this.storageService.get(WorkflowDesignerView.WORKFLOWS_STORE_KEY, 0);
+		const stored = this.storageService.get(WorkflowDesignerView.WORKFLOWS_STORE_KEY, StorageScope.APPLICATION);
 		if (stored) {
 			try {
 				const workflows = JSON.parse(stored) as IWorkflowGraph[];
@@ -419,7 +426,7 @@ export class WorkflowDesignerView extends ViewPane {
 
 		this.workflows.set(this.currentWorkflow.id, this.currentWorkflow);
 		const workflows = Array.from(this.workflows.values());
-		this.storageService.store(WorkflowDesignerView.WORKFLOWS_STORE_KEY, JSON.stringify(workflows), 0);
+		this.storageService.store(WorkflowDesignerView.WORKFLOWS_STORE_KEY, JSON.stringify(workflows), StorageScope.APPLICATION, StorageTarget.USER);
 
 		this.logService.info(`Workflow ${this.currentWorkflow.name} saved`);
 	}
@@ -430,7 +437,15 @@ export class WorkflowDesignerView extends ViewPane {
 		}
 
 		try {
-			const result = await this.workflowEngine.executeWorkflow(this.currentWorkflow.id);
+			const request: IWorkflowExecutionRequest = {
+				workflowId: this.currentWorkflow.id,
+				name: this.currentWorkflow.name,
+				vars: {},
+				priority: 'normal',
+				defaultMaxRetries: 3,
+				defaultTimeoutMs: 300000,
+			};
+			await this.workflowEngine.executeWorkflow(request);
 			this.logService.info(`Workflow ${this.currentWorkflow.name} execution started`);
 		} catch (error) {
 			this.logService.error(`Workflow execution failed: ${error}`);
@@ -450,7 +465,9 @@ export class WorkflowDesignerView extends ViewPane {
 	}
 
 	private renderCanvasContent(): void {
-		this.canvasContainer.innerHTML = '';
+		if (!this.canvasContainer) return;
+
+		clearNode(this.canvasContainer);
 
 		if (!this.currentWorkflow) {
 			return;
@@ -468,22 +485,26 @@ export class WorkflowDesignerView extends ViewPane {
 	}
 
 	private renderNode(node: IWorkflowNode): void {
+		if (!this.canvasContainer) return;
+
 		const nodeElement = append(this.canvasContainer, $(`.workflow-node node-${node.status}`, {
 			style: `left: ${node.position.x}px; top: ${node.position.y}px;`,
 		}));
 		nodeElement.dataset.nodeId = node.id;
 
-		const icon = append(nodeElement, $('.node-icon', {}, this.getNodeIcon(node.type)));
+		append(nodeElement, $('.node-icon', {}, this.getNodeIcon(node.type)));
 		append(nodeElement, $('.node-label', {}, node.label));
 
-		this._register(addStandardDisposableListener(nodeElement, 'click', () => {
+		this._register(addStandardDisposableListener(nodeElement as HTMLElement, 'click', () => {
 			this.selectNode(node);
 		}));
 	}
 
 	private renderEdge(edge: IWorkflowEdge): void {
-		const sourceNode = this.currentWorkflow?.nodes.find(n => n.id === edge.sourceId);
-		const targetNode = this.currentWorkflow?.nodes.find(n => n.id === edge.targetId);
+		if (!this.canvasContainer || !this.currentWorkflow) return;
+
+		const sourceNode = this.currentWorkflow.nodes.find(n => n.id === edge.sourceId);
+		const targetNode = this.currentWorkflow.nodes.find(n => n.id === edge.targetId);
 
 		if (!sourceNode || !targetNode) {
 			return;
@@ -528,7 +549,7 @@ export class WorkflowDesignerView extends ViewPane {
 		this.currentWorkflow.nodes.push(node);
 		this.renderNode(node);
 		this.selectNode(node);
-		this._onDidChange.fire();
+		this._onDidChangeView.fire();
 	}
 
 	private moveNode(nodeId: string, x: number, y: number): void {
@@ -538,7 +559,8 @@ export class WorkflowDesignerView extends ViewPane {
 
 		const node = this.currentWorkflow.nodes.find(n => n.id === nodeId);
 		if (node) {
-			node.position = { x, y };
+			node.position.x = x;
+			node.position.y = y;
 			this.renderCanvasContent();
 			this.selectNode(node);
 		}
@@ -549,12 +571,22 @@ export class WorkflowDesignerView extends ViewPane {
 			return;
 		}
 
-		this.currentWorkflow.nodes = this.currentWorkflow.nodes.filter(n => n.id !== nodeId);
-		this.currentWorkflow.edges = this.currentWorkflow.edges.filter(e => e.sourceId !== nodeId && e.targetId !== nodeId);
+		const nodeIndex = this.currentWorkflow.nodes.findIndex(n => n.id === nodeId);
+		if (nodeIndex === -1) {
+			return;
+		}
+
+		const updatedNodes = [...this.currentWorkflow.nodes];
+		updatedNodes.splice(nodeIndex, 1);
+
+		const updatedEdges = this.currentWorkflow.edges.filter(e => e.sourceId !== nodeId && e.targetId !== nodeId);
+
+		this.currentWorkflow.nodes = updatedNodes;
+		this.currentWorkflow.edges = updatedEdges;
 
 		this.renderCanvasContent();
 		this.clearSelection();
-		this._onDidChange.fire();
+		this._onDidChangeView.fire();
 	}
 
 	private updateNodeLabel(nodeId: string, label: string): void {
@@ -612,9 +644,11 @@ export class WorkflowDesignerView extends ViewPane {
 		this.selectedNode = node;
 		this.selectedEdge = undefined;
 
-		const nodeElement = this.canvasContainer.querySelector(`[data-node-id="${node.id}"]`) as HTMLElement;
-		if (nodeElement) {
-			nodeElement.classList.add('selected');
+		if (this.canvasContainer) {
+			const nodeElement = this.canvasContainer.querySelector(`[data-node-id="${node.id}"]`) as HTMLElement;
+			if (nodeElement) {
+				nodeElement.classList.add('selected');
+			}
 		}
 
 		this.updatePropertiesPanel();
@@ -625,9 +659,11 @@ export class WorkflowDesignerView extends ViewPane {
 		this.selectedEdge = edge;
 		this.selectedNode = undefined;
 
-		const edgeElement = this.canvasContainer.querySelector(`[data-edge-id="${edge.id}"]`) as HTMLElement;
-		if (edgeElement) {
-			edgeElement.classList.add('selected');
+		if (this.canvasContainer) {
+			const edgeElement = this.canvasContainer.querySelector(`[data-edge-id="${edge.id}"]`) as HTMLElement;
+			if (edgeElement) {
+				edgeElement.classList.add('selected');
+			}
 		}
 
 		this.updatePropertiesPanel();
@@ -637,20 +673,26 @@ export class WorkflowDesignerView extends ViewPane {
 		this.selectedNode = undefined;
 		this.selectedEdge = undefined;
 
-		const selected = this.canvasContainer.querySelectorAll('.selected');
-		selected.forEach(el => el.classList.remove('selected'));
+		if (this.canvasContainer) {
+			const selected = this.canvasContainer.querySelectorAll('.selected');
+			selected.forEach(el => el.classList.remove('selected'));
+		}
 
 		this.updatePropertiesPanel();
 	}
 
 	private clearCanvas(): void {
-		this.canvasContainer.innerHTML = '';
+		if (this.canvasContainer) {
+			clearNode(this.canvasContainer);
+		}
 		this.clearSelection();
 	}
 
 	private setZoom(level: number): void {
 		this.zoom = Math.max(0.25, Math.min(2, level));
-		this.canvasContainer.style.transform = `scale(${this.zoom})`;
+		if (this.canvasContainer) {
+			this.canvasContainer.style.transform = `scale(${this.zoom})`;
+		}
 	}
 
 	private updateWorkflowSelector(selectedId?: string): void {
@@ -659,9 +701,10 @@ export class WorkflowDesignerView extends ViewPane {
 			return;
 		}
 
-		selector.innerHTML = '<option value="">-- Select Workflow --</option>';
+		clearNode(selector);
+		append(selector, $('option', { value: '' }, '-- Select Workflow --'));
 		for (const [id, workflow] of this.workflows) {
-			const option = append(selector, $('option', { value: id }, workflow.name));
+			const option = append(selector, $('option', { value: id }, workflow.name)) as HTMLOptionElement;
 			if (id === selectedId) {
 				option.selected = true;
 			}
@@ -677,11 +720,4 @@ export class WorkflowDesignerView extends ViewPane {
 		const item = this.paletteItems.find(i => i.type === type);
 		return item?.label || type;
 	}
-
-	public override dispose(): void {
-		this._register.dispose();
-		super.dispose();
-	}
 }
-
-import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';

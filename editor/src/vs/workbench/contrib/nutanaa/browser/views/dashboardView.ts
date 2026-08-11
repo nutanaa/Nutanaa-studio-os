@@ -3,22 +3,27 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
-import { append, $, clearNode } from '../../../../base/browser/dom.js';
-import { createStyleSheet } from '../../../../base/browser/domStylesheets.js';
-import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
-import { ILogService } from '../../../../platform/log/common/log.js';
-import { IThemeService } from '../../../../platform/theme/common/themeService.js';
-import { IStorageService } from '../../../../platform/storage/common/storage.js';
-import { IHoverService } from '../../../../platform/hover/browser/hover.js';
-import { KeybindingService } from '../../../../platform/keybinding/browser/keybindingService.js';
-import { ViewPane, ViewPaneOptions } from '../../../browser/parts/views/viewPane.js';
-import { IRuntimeStateService } from '../../common/runtimeState.js';
-import { IRuntimeEventBus, RuntimeEventType } from '../../common/runtimeEventBus.js';
+import { append, $, clearNode } from '../../../../../base/browser/dom.js';
+import { createStyleSheet } from '../../../../../base/browser/domStylesheets.js';
+import { DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
+import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
+import { IStorageService } from '../../../../../platform/storage/common/storage.js';
+import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
+import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
+import { IViewDescriptorService } from '../../../../common/views.js';
+import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
+import { FilterViewPane, IFilterViewPaneOptions } from '../../../../browser/parts/views/viewPane.js';
+import { IRuntimeStateService, IRuntimeAgentState } from '../../common/runtime/runtimeState.js';
+import { IRuntimeEventBus } from '../../common/runtime/runtimeEventBus.js';
+import { RuntimeEventType } from '../../common/runtime/runtimeEvents.js';
 import { INutanaaRuntimeConnectionService, NutanaaRuntimeConnectionState } from '../../common/nutanaa.js';
-import { localize } from '../../../../nls.js';
-import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IMetricsManager } from '../../common/ops/metricsManager.js';
+import { localize } from '../../../../../nls.js';
+import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 
 /**
  * Professional AI Operating System Dashboard for Nutanaa Studio.
@@ -35,31 +40,36 @@ import { IConfigurationService } from '../../../../platform/configuration/common
  * Architecture:
  *   Dashboard → RuntimeStateService → RuntimeCoordinator → Backend
  */
-export class DashboardView extends ViewPane {
+export class DashboardView extends FilterViewPane {
 
-	private container: HTMLElement | undefined;
+	private container!: HTMLElement;
 	private startTime: number = Date.now();
 	private readonly disposables: Map<string, HTMLElement> = new Map();
-	private readonly _styleElement: HTMLStyleElement;
-	private readonly _store: DisposableStore;
+	private readonly _dashboardStore: DisposableStore;
+
+	private _styleElement: HTMLStyleElement;
 
 	constructor(
-		options: ViewPaneOptions,
+		options: IFilterViewPaneOptions,
+		@IKeybindingService keybindingService: IKeybindingService,
+		@IContextMenuService contextMenuService: IContextMenuService,
+		@IConfigurationService configurationService: IConfigurationService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
 		@IInstantiationService instantiationService: IInstantiationService,
-		@IContextViewService contextViewService: IContextViewService,
-		@ILogService logService: ILogService,
+		@IOpenerService openerService: IOpenerService,
 		@IThemeService themeService: IThemeService,
-		@IStorageService storageService: IStorageService,
 		@IHoverService hoverService: IHoverService,
-		@IKeybindingService keybindingService: KeybindingService,
+		@IStorageService storageService: IStorageService,
+		@ILogService logService: ILogService,
 		@IRuntimeStateService private readonly stateService: IRuntimeStateService,
 		@IRuntimeEventBus private readonly eventBus: IRuntimeEventBus,
 		@INutanaaRuntimeConnectionService private readonly connectionService: INutanaaRuntimeConnectionService,
-		@IConfigurationService configurationService: IConfigurationService,
+		@IMetricsManager private readonly metricsManager: IMetricsManager,
 	) {
-		super(options, instantiationService, contextViewService, configurationService, keybindingService, themeService, storageService, logService, hoverService);
+		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
-		this._store = new DisposableStore();
+		this._dashboardStore = new DisposableStore();
 		this.startTime = Date.now();
 		this._styleElement = this.createDashboardStyles();
 	}
@@ -377,19 +387,17 @@ export class DashboardView extends ViewPane {
 
 	protected override renderBody(container: HTMLElement): void {
 		super.renderBody(container);
-		container.classList.add('nutanaa-dashboard');
 		this.container = container;
 		this.renderDashboard();
 		this.subscribeToChanges();
 	}
 
+	protected layoutBodyContent(height: number, width: number): void {
+		this.container.classList.add('nutanaa-dashboard');
+	}
+
 	private renderDashboard(): void {
 		if (!this.container) return;
-
-		// Main title
-		const title = append(this.container, $('h2.dashboard-title', {},
-			localize('nutanaa.dashboard.title', 'NUTANAA AI WORKBENCH')
-		));
 
 		// Cards grid
 		const cardsGrid = append(this.container, $('div.dashboard-cards'));
@@ -426,13 +434,14 @@ export class DashboardView extends ViewPane {
 
 		const state = this.stateService.getState();
 		const connection = state.connection;
+		const healthStatus = state.production.health?.status || 'unknown';
 
 		const grid = append(content, $('div.status-grid'));
 
 		// Connection status
 		const statusText = this.getConnectionStatusText(connection.status);
 		this.renderStatusItem(grid, 'Backend', statusText, 'backend');
-		this.renderStatusItem(grid, 'Health', connection.status === NutanaaRuntimeConnectionState.Connected ? 'Healthy' : 'Checking', 'health');
+		this.renderStatusItem(grid, 'Health', this.formatHealthStatus(healthStatus), 'health');
 		this.renderStatusItem(grid, 'Uptime', this.formatUptime(), 'uptime');
 		this.renderStatusItem(grid, 'Latency', this.getLatency(), 'latency');
 		this.renderStatusItem(grid, 'WebSocket', connection.status === NutanaaRuntimeConnectionState.Connected ? 'Connected' : 'Disconnected', 'websocket');
@@ -568,17 +577,20 @@ export class DashboardView extends ViewPane {
 
 		const content = append(card, $('div.card-content'));
 
-		const metrics = this.stateService.getState().metrics;
-		const health = metrics.systemHealth;
+		const state = this.stateService.getState();
+		const connection = state.connection;
+		const isBackendAvailable = connection.status === NutanaaRuntimeConnectionState.Connected;
 
-		// CPU Usage
-		const cpuValue = health?.cpuPercent || this.getRandomMetric(30, 70);
-		const cpuBar = this.renderMetricBar(content, 'CPU', `${cpuValue}%`, cpuValue);
+		const systemMetrics = this.metricsManager.getSystemMetrics();
+		const cpuUsage = isBackendAvailable ? (systemMetrics?.cpu?.usage ?? 0) : 0;
+		const ramPercentage = isBackendAvailable ? (systemMetrics?.memory?.percentage ?? 0) : 0;
+
+		const cpuValue = Math.round(cpuUsage);
+		const cpuBar = this.renderMetricBar(content, 'CPU', isBackendAvailable ? `${cpuValue}%` : 'N/A', isBackendAvailable ? cpuValue : 0);
 		this.disposables.set('cpu-bar', cpuBar);
 
-		// RAM Usage
-		const ramValue = health?.memoryPercent || this.getRandomMetric(40, 80);
-		const ramBar = this.renderMetricBar(content, 'RAM', `${ramValue}%`, ramValue);
+		const ramValue = Math.round(ramPercentage);
+		const ramBar = this.renderMetricBar(content, 'RAM', isBackendAvailable ? `${ramValue}%` : 'N/A', isBackendAvailable ? ramValue : 0);
 		this.disposables.set('ram-bar', ramBar);
 
 		this.renderDetailRow(content, 'Queue', '0');
@@ -635,55 +647,67 @@ export class DashboardView extends ViewPane {
 
 	private subscribeToChanges(): void {
 		// Connection state changes
-		this._store.add(this.connectionService.onDidChangeState(() => {
+			this._dashboardStore.add(this.connectionService.onDidChangeState(() => {
 			this.refreshRuntimeStatus();
 		}));
 
 		// Agent changes
-		this._store.add(this.stateService.onAgentsChanged(() => {
+			this._dashboardStore.add(this.stateService.onAgentsChanged(() => {
 			this.refreshAgentCard();
 		}));
 
 		// Provider changes
-		this._store.add(this.stateService.onProvidersChanged(() => {
+			this._dashboardStore.add(this.stateService.onProvidersChanged(() => {
 			this.refreshProviderCard();
 		}));
 
 		// Task changes
-		this._store.add(this.stateService.onTasksChanged(() => {
+			this._dashboardStore.add(this.stateService.onTasksChanged(() => {
 			this.refreshTasksCard();
 		}));
 
 		// State changes (general refresh)
-		this._store.add(this.stateService.onDidChangeState(() => {
+			this._dashboardStore.add(this.stateService.onDidChangeState(() => {
 			this.refreshAllCards();
 		}));
 
-		// Runtime events
-		this._store.add(this.eventBus.on(RuntimeEventType.RuntimeConnected, () => {
-			this.startTime = Date.now();
-			this.refreshRuntimeStatus();
-		}));
+	// Metrics changes
+		this._dashboardStore.add(this.metricsManager.onDidUpdateMetrics(() => {
+		this.refreshRuntimeMetricsCard();
+	}));
 
-		this._store.add(this.eventBus.on(RuntimeEventType.AgentStarted, () => {
+	// Runtime events
+		this._dashboardStore.add(this.eventBus.on(RuntimeEventType.RuntimeConnected, () => {
+		this.startTime = Date.now();
+		this.refreshRuntimeStatus();
+	}));
+
+			this._dashboardStore.add(this.eventBus.on(RuntimeEventType.AgentStarted, () => {
 			this.refreshAgentCard();
 		}));
 
-		this._store.add(this.eventBus.on(RuntimeEventType.TaskStarted, () => {
+			this._dashboardStore.add(this.eventBus.on(RuntimeEventType.TaskStarted, () => {
 			this.refreshTasksCard();
 		}));
 
 		// Logs changes
-		this._store.add(this.stateService.onLogsChanged(() => {
+			this._dashboardStore.add(this.stateService.onLogsChanged(() => {
 			this.refreshEvents();
 		}));
 	}
 
 	private refreshRuntimeStatus(): void {
-		const connection = this.stateService.getState().connection;
+		const state = this.stateService.getState();
+		const connection = state.connection;
 
 		const backendEl = this.disposables.get('status-backend');
 		if (backendEl) backendEl.textContent = this.getConnectionStatusText(connection.status);
+
+		const healthEl = this.disposables.get('status-health');
+		if (healthEl) healthEl.textContent = this.formatHealthStatus(state.production.health?.status || 'unknown');
+
+		const latencyEl = this.disposables.get('status-latency');
+		if (latencyEl) latencyEl.textContent = this.getLatency();
 
 		const uptimeEl = this.disposables.get('status-uptime');
 		if (uptimeEl) uptimeEl.textContent = this.formatUptime();
@@ -692,29 +716,70 @@ export class DashboardView extends ViewPane {
 		if (wsEl) wsEl.textContent = connection.status === NutanaaRuntimeConnectionState.Connected ? 'Connected' : 'Disconnected';
 	}
 
+	private refreshRuntimeMetricsCard(): void {
+		const systemMetrics = this.metricsManager.getSystemMetrics();
+
+		const cpuValue = Math.round(systemMetrics.cpu.usage);
+		const cpuBar = this.disposables.get('cpu-bar');
+		if (cpuBar) {
+			cpuBar.style.width = `${cpuValue}%`;
+			const valueEl = cpuBar.parentElement?.querySelector('.metric-value');
+			if (valueEl) valueEl.textContent = `${cpuValue}%`;
+		}
+
+		const ramValue = Math.round(systemMetrics.memory.percentage);
+		const ramBar = this.disposables.get('ram-bar');
+		if (ramBar) {
+			ramBar.style.width = `${ramValue}%`;
+			const valueEl = ramBar.parentElement?.querySelector('.metric-value');
+			if (valueEl) valueEl.textContent = `${ramValue}%`;
+		}
+	}
+
 	private refreshAgentCard(): void {
-		this.refreshAllCards();
+		const existingCard = this.container?.querySelector('.agent-card');
+		if (existingCard && existingCard.parentElement) {
+			const parent = existingCard.parentElement;
+			existingCard.remove();
+			this.renderActiveAgentCard(parent);
+		} else {
+			this.refreshAllCards();
+		}
 	}
 
 	private refreshProviderCard(): void {
-		this.refreshAllCards();
+		const existingCard = this.container?.querySelector('.provider-card');
+		if (existingCard && existingCard.parentElement) {
+			const parent = existingCard.parentElement;
+			existingCard.remove();
+			this.renderProviderCard(parent);
+		} else {
+			this.refreshAllCards();
+		}
 	}
 
 	private refreshTasksCard(): void {
-		this.refreshAllCards();
+		const existingCard = this.container?.querySelector('.tasks-card');
+		if (existingCard && existingCard.parentElement) {
+			const parent = existingCard.parentElement;
+			existingCard.remove();
+			this.renderTasksCard(parent);
+		} else {
+			this.refreshAllCards();
+		}
 	}
 
 	private refreshEvents(): void {
 		const eventsList = this.container?.querySelector('.events-list');
 		if (eventsList) {
-			clearNode(eventsList);
+			clearNode(eventsList as HTMLElement);
 			const state = this.stateService.getState();
 			const logs = state.logs || [];
 			const recentLogs = logs.slice(-10).reverse();
 
 			if (recentLogs.length > 0) {
 				for (const log of recentLogs) {
-					this.renderEventItem(eventsList, log);
+					this.renderEventItem(eventsList as HTMLElement, log);
 				}
 			}
 		}
@@ -747,23 +812,35 @@ export class DashboardView extends ViewPane {
 	}
 
 	private getLatency(): string {
-		return '38 ms';
+		const systemMetrics = this.metricsManager.getSystemMetrics();
+		const latency = systemMetrics.network.latency;
+		return latency > 0 ? `${Math.round(latency)} ms` : 'N/A';
 	}
 
 	private getResponseTime(): string {
-		return '41 ms';
+		return 'N/A';
 	}
 
 	private getWebSocketEvents(): string {
-		return '1.2K';
+		return '0';
 	}
 
 	private getVRAM(): string {
-		return '4.8 GB';
+		return 'N/A';
 	}
 
 	private getDefaultModel(): string {
-		return 'llama3.2';
+		return 'No model';
+	}
+
+	private formatHealthStatus(status: string): string {
+		switch (status) {
+			case 'healthy': return 'Healthy';
+			case 'degraded': return 'Degraded';
+			case 'unhealthy': return 'Unhealthy';
+			case 'unknown': return 'Unknown';
+			default: return 'Checking';
+		}
 	}
 
 	private formatTime(timestamp: number): string {
@@ -780,31 +857,30 @@ export class DashboardView extends ViewPane {
 	private getActiveProvider(state: ReturnType<IRuntimeStateService['getState']>): string {
 		const providers = Object.values(state.providers);
 		const active = providers.find(p => p.summary.status === 'healthy');
-		return active?.summary.name || 'Ollama';
+		return active?.summary.name || 'No provider';
 	}
 
 	private getActiveModel(state: ReturnType<IRuntimeStateService['getState']>): string {
 		const providers = Object.values(state.providers);
 		const active = providers.find(p => p.summary.activeModel);
-		return active?.summary.activeModel || 'llama3.2';
+		return active?.summary.activeModel || 'No model';
 	}
 
-	private getExecutionTime(agent: { metrics?: { executionTime?: number } }): string {
-		if (agent.metrics?.executionTime) {
-			return `${(agent.metrics.executionTime / 1000).toFixed(1)}s`;
+	private getExecutionTime(agent: IRuntimeAgentState): string {
+		if (agent.metrics?.avgExecutionTimeMs) {
+			return `${(agent.metrics.avgExecutionTimeMs / 1000).toFixed(1)}s`;
 		}
-		return '2.3s';
+		return '0s';
 	}
 
-	private calculateProgress(agent: { metrics?: { progress?: number } }): number {
-		if (agent.metrics?.progress !== undefined) {
-			return Math.min(100, Math.max(0, agent.metrics.progress));
+	private calculateProgress(agent: IRuntimeAgentState): number {
+		if (agent.metrics?.activeTasks !== undefined || agent.metrics?.completedTasks !== undefined) {
+			const total = (agent.metrics?.completedTasks || 0) + (agent.metrics?.failedTasks || 0) + (agent.metrics?.activeTasks || 0);
+			if (total > 0) {
+				return Math.round((agent.metrics.completedTasks / total) * 100);
+			}
 		}
-		return 75;
-	}
-
-	private getRandomMetric(min: number, max: number): number {
-		return Math.floor(Math.random() * (max - min + 1)) + min;
+		return 0;
 	}
 
 	private getDefaultEvents(): Array<{ timestamp: number; message: string }> {
@@ -819,7 +895,9 @@ export class DashboardView extends ViewPane {
 	}
 
 	public override dispose(): void {
-		this._store.dispose();
+		console.count('[Dashboard] dispose');
+		this._styleElement.remove();
+		this._dashboardStore.dispose();
 		this.disposables.clear();
 		super.dispose();
 	}

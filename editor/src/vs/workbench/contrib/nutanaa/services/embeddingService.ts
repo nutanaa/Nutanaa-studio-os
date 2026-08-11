@@ -5,8 +5,8 @@
 
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { IEmbeddingEngine, LocalEmbeddingEngine } from '../common/embeddingEngine.js';
-import { VectorIndex } from '../common/vectorIndex.js';
+import { IEmbeddingEngine, LocalEmbeddingEngine } from '../common/memory/embeddingEngine.js';
+import { VectorIndex } from '../common/memory/vectorIndex.js';
 import { IEmbeddingRequest, IVectorSearchResult } from '../models/embeddingModel.js';
 import { ICodeChunk } from '../models/workspaceModel.js';
 
@@ -25,7 +25,7 @@ export class EmbeddingService extends Disposable implements IEmbeddingService {
 
 	private readonly engine: IEmbeddingEngine;
 	private readonly vectorIndex: VectorIndex;
-
+  
 	constructor() {
 		super();
 		this.engine = new LocalEmbeddingEngine();

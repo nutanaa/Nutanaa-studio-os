@@ -5,7 +5,7 @@
 
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { IAgentStateService } from '../common/agentStateService.js';
+import { IAgentStateService } from '../common/agents/agentStateService.js';
 
 export const IAgentWatchdog = createDecorator<IAgentWatchdog>('agentWatchdog');
 
