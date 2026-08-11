@@ -720,4 +720,8 @@ export class WorkflowDesignerView extends FilterViewPane {
 		const item = this.paletteItems.find(i => i.type === type);
 		return item?.label || type;
 	}
+
+	public override dispose(): void {
+		super.dispose();
+	}
 }

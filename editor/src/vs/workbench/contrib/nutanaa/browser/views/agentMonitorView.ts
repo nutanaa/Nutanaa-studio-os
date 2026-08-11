@@ -407,6 +407,9 @@ export class AgentMonitorView extends FilterViewPane {
 	}
 
 	private startRefreshInterval(): void {
+		if (this.refreshInterval) {
+			clearInterval(this.refreshInterval);
+		}
 		this.refreshInterval = setInterval(() => {
 			this.refresh();
 		}, 5000);

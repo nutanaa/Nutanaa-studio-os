@@ -20,7 +20,9 @@ import { FilterViewPane, IFilterViewPaneOptions } from '../../../../browser/part
 import { IRuntimeEventBus } from '../../common/runtime/runtimeEventBus.js';
 import { RuntimeEventType } from '../../common/runtime/runtimeEvents.js';
 import { AgentEvent, AgentStreamEvent, RuntimeEvent } from '../../common/runtime/runtimeEvent.js';
+import { IRuntimeCoordinator } from '../../common/runtime/runtimeCoordinator.js';
 import { IChatMessage, IChatAttachment } from '../../models/studioModel.js';
+import { IAgentExecutionRequest } from '../../models/executionModel.js';
 import { localize } from '../../../../../nls.js';
 import { renderMarkdown } from '../../../../../base/browser/markdownRenderer.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
@@ -72,42 +74,6 @@ const MOCK_CONTEXT_OPTIONS: readonly { readonly id: string; readonly label: stri
 	{ id: 'selection', label: '@selection' },
 	{ id: 'workspace', label: '@workspace' },
 	{ id: 'codebase', label: '@codebase' },
-];
-
-const MOCK_RESPONSES: readonly string[] = [
-	`Nutanaa Studio OS is an AI-native development environment designed around agents, providers, tools, workspace context, and model orchestration.
-
-## Key Features
-- **Agent orchestration** with multi-model support
-- **Workspace-aware** context and file understanding
-- **Tool integration** for code analysis and modification
-- **Streaming responses** with real-time feedback
-
-\`\`\`typescript
-interface AgentRequest {
-  readonly agentId: string;
-  readonly payload: Record<string, unknown>;
-  readonly priority: 'low' | 'normal' | 'high';
-}
-\`\`\`
-
-The architecture separates concerns between the coordinator, dispatcher, and provider layers for maximum flexibility.`,
-	`Here is an overview of the current implementation:
-
-1. **ChatView** — Handles the UI, state management, and user interactions
-2. **AgentCoordinator** — Routes requests to appropriate agents
-3. **ProviderRegistry** — Manages Ollama, OpenAI, and Anthropic connections
-4. **RuntimeEventBus** — Streams agent responses back to the UI
-
-\`\`\`typescript
-const response = await coordinator.executeAgent({
-  agentId: 'chat',
-  payload: { input: userMessage },
-  timeoutMs: 120000,
-});
-\`\`\`
-
-Would you like me to dive deeper into any specific component?`,
 ];
 
 /**
@@ -186,6 +152,7 @@ export class ChatView extends FilterViewPane {
 		@IHoverService hoverService: IHoverService,
 		@IStorageService private readonly storageService: IStorageService,
 		@IRuntimeEventBus private readonly runtimeEventBus: IRuntimeEventBus,
+		@IRuntimeCoordinator private readonly runtimeCoordinator: IRuntimeCoordinator,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -1029,19 +996,45 @@ export class ChatView extends FilterViewPane {
 		this.renderMessages();
 
 		try {
-			await this.mockGenerateResponse(assistantMessage.id, abortController.signal);
-			const finalMessage = this.pendingMessages.get(assistantMessage.id);
-			if (finalMessage) {
-				const mockText = MOCK_RESPONSES[Math.floor(Math.random() * MOCK_RESPONSES.length)];
-				const updatedMessage = { ...finalMessage, content: mockText };
-				this.pendingMessages.set(assistantMessage.id, updatedMessage);
+			const request: IAgentExecutionRequest = {
+				requestId: `req-chat-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+				agentId: this.state.selectedMode || 'chat',
+				title: userMessage.content,
+				payload: { input: userMessage.content },
+				priority: 'normal',
+				timeoutMs: 0,
+				maxRetries: 0,
+				workflowId: undefined,
+				workflowNodeId: undefined,
+			};
+
+			const response = await this.runtimeCoordinator.executeAgent(request);
+
+			if (response.status === 'success' && response.output !== undefined) {
+				const output = typeof response.output === 'string'
+					? response.output
+					: JSON.stringify(response.output);
+				const finalMessage = { ...assistantMessage, content: output };
+				this.pendingMessages.set(assistantMessage.id, finalMessage);
 				this.state = {
 					...this.state,
 					messages: this.state.messages.map(m =>
-						m.id === assistantMessage.id ? updatedMessage : m
+						m.id === assistantMessage.id ? finalMessage : m
 					),
 				};
 				this.pendingMessages.delete(assistantMessage.id);
+			} else {
+				const errorMessage = {
+					...assistantMessage,
+					content: response.error || 'Agent execution failed',
+				};
+				this.pendingMessages.set(assistantMessage.id, errorMessage);
+				this.state = {
+					...this.state,
+					messages: this.state.messages.map(m =>
+						m.id === assistantMessage.id ? errorMessage : m
+					),
+				};
 			}
 		} catch (error) {
 			const currentMessage = this.pendingMessages.get(assistantMessage.id);
@@ -1070,38 +1063,6 @@ export class ChatView extends FilterViewPane {
 			this.updateInputState();
 			this.updateTokenCounter();
 			this.saveState();
-		}
-	}
-
-	private async mockGenerateResponse(messageId: string, signal: AbortSignal): Promise<void> {
-		const delay = 1200 + Math.random() * 800;
-		await new Promise<void>((resolve, reject) => {
-			const timeout = setTimeout(resolve, delay);
-			signal.addEventListener('abort', () => {
-				clearTimeout(timeout);
-				reject(new Error('Aborted'));
-			}, { once: true });
-		});
-
-		if (signal.aborted) {
-			throw new Error('Aborted');
-		}
-
-		const mockText = MOCK_RESPONSES[Math.floor(Math.random() * MOCK_RESPONSES.length)];
-		const words = mockText.split(' ');
-		const currentMessage = this.pendingMessages.get(messageId);
-		if (!currentMessage) {
-			return;
-		}
-
-		for (let i = 0; i < words.length; i++) {
-			if (signal.aborted) {
-				throw new Error('Aborted');
-			}
-			await new Promise<void>(r => setTimeout(r, 25));
-			const updated = { ...currentMessage, content: currentMessage.content + (i > 0 ? ' ' : '') + words[i] };
-			this.pendingMessages.set(messageId, updated);
-			this.renderStreamingContent(messageId, updated.content);
 		}
 	}
 
@@ -1503,6 +1464,25 @@ export class ChatView extends FilterViewPane {
 	}
 
 	public override dispose(): void {
+		if (this.currentExecution) {
+			this.currentExecution.abortController.abort();
+			this.currentExecution = undefined;
+		}
+
+		if (this.contextMenuPopover) {
+			this.contextMenuPopover.remove();
+			this.contextMenuPopover = undefined;
+		}
+
+		if (this.contextMenuDisposer) {
+			this.contextMenuDisposer.dispose();
+			this.contextMenuDisposer = undefined;
+		}
+
+		if (this.attachmentInput && this.attachmentInput.parentElement) {
+			this.attachmentInput.parentElement.removeChild(this.attachmentInput);
+		}
+
 		this.saveState();
 		super.dispose();
 	}

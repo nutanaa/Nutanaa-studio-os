@@ -6,6 +6,7 @@
 import { createDecorator } from '../../../../../platform/instantiation/common/instantiation.js';
 import { Event } from '../../../../../base/common/event.js';
 import { IRuntimeEvent } from './runtimeEvent.js';
+import { IAgentExecutionRequest, IAgentExecutionResponse } from '../../models/executionModel.js';
 
 export const IRuntimeCoordinator =
 	createDecorator<IRuntimeCoordinator>('runtimeCoordinator');
@@ -21,4 +22,6 @@ export interface IRuntimeCoordinator {
 	stop(): Promise<void>;
 
 	handleRuntimeEvent(event: IRuntimeEvent): void;
+
+	executeAgent(request: IAgentExecutionRequest): Promise<IAgentExecutionResponse>;
 }

@@ -92,6 +92,11 @@ export class LogsView extends FilterViewPane {
 	}
 
 	private renderArrowDefs(): void {
+		const existing = this.container.querySelector('svg#arrowhead');
+		if (existing) {
+			existing.remove();
+		}
+
 		const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
 		svg.style.width = '0';
 		svg.style.height = '0';

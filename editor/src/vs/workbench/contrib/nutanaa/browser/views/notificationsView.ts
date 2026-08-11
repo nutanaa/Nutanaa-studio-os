@@ -51,6 +51,7 @@ export class NotificationsView extends FilterViewPane {
 		maxVisible: 10,
 		autoDismissDelay: 5000,
 	};
+	private autoDismissTimers: ReturnType<typeof setTimeout>[] = [];
 
 	constructor(
 		options: IFilterViewPaneOptions,
@@ -427,9 +428,10 @@ export class NotificationsView extends FilterViewPane {
 
 		// Auto-dismiss after delay if configured
 		if (newNotification.dismissible && newNotification.dismissibleOnce) {
-			setTimeout(() => {
+			const timer = setTimeout(() => {
 				this.dismissNotification(newNotification.id);
 			}, this.settings.autoDismissDelay);
+			this.autoDismissTimers.push(timer);
 		}
 	}
 
@@ -468,6 +470,10 @@ export class NotificationsView extends FilterViewPane {
 	}
 
 	public override dispose(): void {
+		for (const timer of this.autoDismissTimers) {
+			clearTimeout(timer);
+		}
+		this.autoDismissTimers = [];
 		this.saveNotifications();
 		super.dispose();
 	}
